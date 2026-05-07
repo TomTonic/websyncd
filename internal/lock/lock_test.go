@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -52,7 +53,7 @@ func TestAcquireRemovesStaleLock(t *testing.T) {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	staleTs := time.Now().Add(-2 * time.Hour).Unix()
-	if err := os.WriteFile(path, []byte("pid=1\ntimestamp="+time.Unix(staleTs, 0).Format("2006")+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("pid=1\ntimestamp="+strconv.FormatInt(staleTs, 10)+"\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 

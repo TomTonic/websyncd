@@ -91,7 +91,12 @@ func Run(ctx context.Context, cfg config.Config, logger *log.Logger) error {
 
 func startWebhook(ctx context.Context, addr string, trigger func(), logger *log.Logger) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		trigger()
 		w.WriteHeader(http.StatusAccepted)
 	})
