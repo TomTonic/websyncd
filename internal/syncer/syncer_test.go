@@ -46,7 +46,15 @@ func TestSyncSkipsGetWhenHeadReturns304(t *testing.T) {
 	// Code perspective: Sync must stop after HEAD and never call GET.
 	dir := t.TempDir()
 	out := filepath.Join(dir, "state.txt")
-	fc := &fakeClient{queue: []response{{resp: &http.Response{StatusCode: http.StatusNotModified, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}}}}
+	fc := &fakeClient{
+		queue: []response{{
+			resp: &http.Response{
+				StatusCode: http.StatusNotModified,
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			},
+		}},
+	}
 
 	s := &Syncer{Client: fc, Resource: "https://example.invalid/resource", OutputPath: out}
 	if err := s.Sync(context.Background()); err != nil {
