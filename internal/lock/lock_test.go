@@ -17,13 +17,23 @@ func TestAcquirePreventsConcurrentExecution(t *testing.T) {
 	t.Setenv("TMPDIR", tmp)
 
 	now := time.Now()
-	first, err := Acquire("https://example.invalid/resource", "/tmp/file", 30*time.Second, func() time.Time { return now })
+	first, err := Acquire(
+		"https://example.invalid/resource",
+		"/tmp/file",
+		30*time.Second,
+		func() time.Time { return now },
+	)
 	if err != nil {
 		t.Fatalf("first Acquire() error = %v", err)
 	}
 	defer func() { _ = first.Release() }()
 
-	second, err := Acquire("https://example.invalid/resource", "/tmp/file", 30*time.Second, func() time.Time { return now.Add(time.Second) })
+	second, err := Acquire(
+		"https://example.invalid/resource",
+		"/tmp/file",
+		30*time.Second,
+		func() time.Time { return now.Add(time.Second) },
+	)
 	if !errors.Is(err, ErrLocked) {
 		t.Fatalf("second Acquire() err = %v, want ErrLocked", err)
 	}
@@ -34,7 +44,12 @@ func TestAcquirePreventsConcurrentExecution(t *testing.T) {
 	if err := first.Release(); err != nil {
 		t.Fatalf("Release() error = %v", err)
 	}
-	third, err := Acquire("https://example.invalid/resource", "/tmp/file", 30*time.Second, func() time.Time { return now.Add(2 * time.Second) })
+	third, err := Acquire(
+		"https://example.invalid/resource",
+		"/tmp/file",
+		30*time.Second,
+		func() time.Time { return now.Add(2 * time.Second) },
+	)
 	if err != nil {
 		t.Fatalf("third Acquire() error = %v", err)
 	}
