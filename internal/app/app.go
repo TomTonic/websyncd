@@ -312,7 +312,11 @@ func formatAge(at, now time.Time) string {
 	if at.IsZero() {
 		return "never"
 	}
-	return now.Sub(at).Truncate(time.Second).String()
+	age := now.Sub(at)
+	if age < 0 {
+		age = 0
+	}
+	return age.Truncate(time.Second).String()
 }
 
 func sleepOrDone(ctx context.Context, d time.Duration) bool {
