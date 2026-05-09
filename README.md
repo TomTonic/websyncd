@@ -31,10 +31,10 @@ OUTPUT_PATH=/var/data/data.json \
 
 ### Docker
 
-Build the container image:
+Pull the published image from GHCR:
 
 ```sh
-docker build -t websyncd .
+docker pull ghcr.io/tomtonic/websyncd:latest
 ```
 
 Run a single sync service:
@@ -44,7 +44,7 @@ docker run --rm \
   -e RESOURCE_URL=https://example.com/data.json \
   -e OUTPUT_PATH=/data/data.json \
   -v "$(pwd)/data:/data" \
-  websyncd
+  ghcr.io/tomtonic/websyncd:latest
 ```
 
 An example `docker-compose.yaml` is included that runs two services writing into the same local `./data` directory:
@@ -55,8 +55,15 @@ An example `docker-compose.yaml` is included that runs two services writing into
 Start both services:
 
 ```sh
-docker compose up -d --build
+docker compose up -d
 ```
+
+## CI and Release Workflows
+
+- **CI** (`.github/workflows/ci.yaml`) runs build, test, and `golangci-lint` (`latest`) on GitHub Actions and uploads a Linux amd64 binary artifact.
+- **Release** (`.github/workflows/release.yaml`) runs after successful CI runs, and when the tested commit has a tag, it packages that CI artifact into the Docker image and pushes it to GHCR.
+
+The `Dockerfile` is intentionally packaging-only (it copies a prebuilt `websyncd` binary into Alpine) and does not compile source code itself.
 
 ### Environment Variables
 
