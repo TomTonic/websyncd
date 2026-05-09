@@ -1,5 +1,5 @@
 services:
-  adguard-filter:
+  adguard-filter-updater:
     image: ghcr.io/tomtonic/websyncd:latest
     environment:
       RESOURCE_URL: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
@@ -9,7 +9,7 @@ services:
       - ./data:/data
     restart: unless-stopped
 
-  stevenblack-hosts:
+  stevenblack-hosts-updater:
     image: ghcr.io/tomtonic/websyncd:latest
     environment:
       RESOURCE_URL: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
