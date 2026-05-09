@@ -61,7 +61,7 @@ docker compose up -d
 ## CI and Release Workflows
 
 - **CI** (`.github/workflows/ci.yaml`) runs build, test, and `golangci-lint` (`latest`) on GitHub Actions and uploads a Linux amd64 binary artifact.
-- **Release** (`.github/workflows/release.yaml`) runs after successful CI runs, and when the tested commit has a tag, it packages that CI artifact into the Docker image and pushes it to GHCR.
+- **Release** (`.github/workflows/release.yaml`) runs on `v*` tag pushes, waits for successful CI completion for the same commit, then packages that CI artifact into the Docker image and pushes it to GHCR.
 
 The `Dockerfile` is intentionally packaging-only (it copies a prebuilt `websyncd` binary into Alpine) and does not compile source code itself.
 
