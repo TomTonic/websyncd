@@ -31,6 +31,9 @@ jobs:
         run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/websyncd-linux-amd64 ./cmd/websyncd
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o dist/websyncd-linux-arm64 ./cmd/websyncd
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -o dist/websyncd-linux-armv7 ./cmd/websyncd
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -o dist/websyncd-linux-armv6 ./cmd/websyncd
 
       - name: Lint
         uses: golangci/golangci-lint-action@v8
@@ -40,5 +43,5 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: websyncd-linux-amd64
-          path: dist/websyncd-linux-amd64
+          name: websyncd-linux-binaries
+          path: dist/websyncd-linux-*

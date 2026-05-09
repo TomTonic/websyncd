@@ -60,10 +60,10 @@ docker compose up -d
 
 ## CI and Release Workflows
 
-- **CI** (`.github/workflows/ci.yaml`) runs build, test, and `golangci-lint` (`latest`) on GitHub Actions and uploads a Linux amd64 binary artifact.
-- **Release** (`.github/workflows/release.yaml`) runs on `v*` tag pushes, waits for successful CI completion for the same commit, then packages that CI artifact into the Docker image and pushes it to GHCR.
+- **CI** (`.github/workflows/ci.yaml`) runs build, test, and `golangci-lint` (`latest`) on GitHub Actions and uploads Linux binary artifacts for amd64, arm64, armv7, and armv6.
+- **Release** (`.github/workflows/release.yaml`) runs on `v*` tag pushes, waits for successful CI completion for the same commit, then packages those CI artifacts into a multi-arch Docker image and pushes it to GHCR.
 
-The `Dockerfile` is intentionally packaging-only (it copies a prebuilt `websyncd` binary into Alpine) and does not compile source code itself.
+The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v6). The `Dockerfile` is intentionally packaging-only and does not compile source code itself.
 
 ### Environment Variables
 
