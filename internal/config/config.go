@@ -13,11 +13,14 @@ type Config struct {
 	PollInterval  time.Duration
 	HTTPTimeout   time.Duration
 	LockTTL       time.Duration
+	HeartbeatInterval time.Duration
 	EnableWebhook bool
 	WebhookAddr   string
 	EnableSSE     bool
 	SSEURL        string
 	EnableHTTP3   bool
+	EnableHeartbeat bool
+	HeartbeatAddr string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -27,11 +30,14 @@ func LoadFromEnv() (Config, error) {
 		PollInterval:  envDuration("POLL_INTERVAL", time.Minute),
 		HTTPTimeout:   envDuration("HTTP_TIMEOUT", 30*time.Second),
 		LockTTL:       envDuration("LOCK_TTL", 5*time.Minute),
+		HeartbeatInterval: envDuration("HEARTBEAT_INTERVAL", 5*time.Minute),
 		EnableWebhook: envBool("ENABLE_WEBHOOK", false),
 		WebhookAddr:   envString("WEBHOOK_ADDR", ":8080"),
 		EnableSSE:     envBool("ENABLE_SSE", false),
 		SSEURL:        os.Getenv("SSE_URL"),
 		EnableHTTP3:   envBool("ENABLE_HTTP3", false),
+		EnableHeartbeat: envBool("ENABLE_HEARTBEAT", false),
+		HeartbeatAddr: envString("HEARTBEAT_ADDR", ":8081"),
 	}
 
 	if cfg.ResourceURL == "" {
