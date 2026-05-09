@@ -8,12 +8,13 @@ on:
       - completed
 
 permissions:
+  actions: read
   contents: read
   packages: write
 
 jobs:
   publish-ghcr:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout commit from CI run
