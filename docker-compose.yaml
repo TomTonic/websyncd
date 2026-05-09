@@ -1,0 +1,20 @@
+services:
+  adguard-filter-updater:
+    image: ghcr.io/tomtonic/websyncd:latest
+    environment:
+      RESOURCE_URL: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
+      OUTPUT_PATH: /data/adguard-filter.txt
+      POLL_INTERVAL: 1h
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  stevenblack-hosts-updater:
+    image: ghcr.io/tomtonic/websyncd:latest
+    environment:
+      RESOURCE_URL: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+      OUTPUT_PATH: /data/stevenblack-hosts.txt
+      POLL_INTERVAL: 1h
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

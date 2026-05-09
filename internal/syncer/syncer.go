@@ -30,7 +30,7 @@ func (s *Syncer) Sync(ctx context.Context) error {
 
 	headResp, needGET, err := s.head(ctx)
 	if err == nil && headResp != nil {
-		defer headResp.Body.Close()
+		defer func() { _ = headResp.Body.Close() }()
 	}
 	if err != nil {
 		needGET = true
@@ -47,7 +47,7 @@ func (s *Syncer) Sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 	if getResp.StatusCode == http.StatusNotModified {
 		return nil
 	}
