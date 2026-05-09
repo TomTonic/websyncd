@@ -45,7 +45,7 @@ func TestHeartbeatHandlerHealthz(t *testing.T) {
 	state.recordSyncStart(time.Now().Add(-6 * time.Second))
 	state.recordSyncSuccess(time.Now().Add(-5 * time.Second))
 	state.recordSyncStart(time.Now().Add(-4 * time.Second))
-	state.recordSyncFailure(time.Now().Add(-3 * time.Second), errors.New("sync failed"))
+	state.recordSyncFailure(time.Now().Add(-3*time.Second), errors.New("sync failed"))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -80,4 +80,3 @@ func TestHeartbeatHandlerMethodNotAllowed(t *testing.T) {
 		t.Fatalf("Allow = %q, want %q", got, http.MethodGet)
 	}
 }
-
