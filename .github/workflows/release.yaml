@@ -29,14 +29,17 @@ jobs:
       - name: Wait for successful CI run for this commit
         id: ci_run
         uses: actions/github-script@v7
+        env:
+          CI_WAIT_MAX_ATTEMPTS: "40"
+          CI_WAIT_DELAY_MS: "15000"
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const workflowId = "ci.yaml";
             const sha = context.sha;
-            const maxAttempts = 40;
-            const delayMs = 15000;
+            const maxAttempts = Number(process.env.CI_WAIT_MAX_ATTEMPTS || "40");
+            const delayMs = Number(process.env.CI_WAIT_DELAY_MS || "15000");
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
               const res = await github.rest.actions.listWorkflowRuns({

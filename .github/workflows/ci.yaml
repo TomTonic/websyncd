@@ -35,6 +35,17 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -o dist/websyncd-linux-armv7 ./cmd/websyncd
           CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -o dist/websyncd-linux-armv6 ./cmd/websyncd
 
+      - name: Verify built binaries
+        run: |
+          test -s dist/websyncd-linux-amd64
+          test -s dist/websyncd-linux-arm64
+          test -s dist/websyncd-linux-armv7
+          test -s dist/websyncd-linux-armv6
+          file dist/websyncd-linux-amd64 | grep -q "x86-64"
+          file dist/websyncd-linux-arm64 | grep -qi "aarch64\|arm64"
+          file dist/websyncd-linux-armv7 | grep -qi "arm"
+          file dist/websyncd-linux-armv6 | grep -qi "arm"
+
       - name: Lint
         uses: golangci/golangci-lint-action@v8
         with:
