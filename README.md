@@ -11,6 +11,8 @@ websyncd is a small Go daemon that keeps a local file in sync with a remote HTTP
 - **Atomic file writes** — writes to a temporary file in the same directory, then renames it into place, so readers never see a partial file.
 - **Instance locking** — uses a PID/timestamp lock file in `$TMPDIR` (keyed by a SHA-256 of the resource URL + output path) to prevent two daemons from racing over the same file. Stale locks from crashed processes are cleared automatically after a configurable TTL.
 - **Graceful shutdown** — handles `SIGINT` / `SIGTERM` and stops all goroutines cleanly.
+- **Operational logging** — emits startup, trigger, sync success/failure, SSE/webhook lifecycle, periodic heartbeat, and shutdown logs.
+- **Heartbeat endpoint** — optional `GET /healthz` endpoint for liveness monitoring (ideal for Docker `healthcheck`).
 - **Container-friendly configuration** — all settings are read from environment variables; no config files required.
 
 ## Usage
@@ -43,8 +45,17 @@ Run a single sync service:
 docker run --rm \
   -e RESOURCE_URL=https://example.com/data.json \
   -e OUTPUT_PATH=/data/data.json \
+  -e ENABLE_HEARTBEAT=true \
+  -e HEARTBEAT_ADDR=127.0.0.1:8081 \
   -v "$(pwd)/data:/data" \
   ghcr.io/tomtonic/websyncd:latest
+```
+
+Optional: add a Docker healthcheck against the heartbeat endpoint:
+
+```sh
+--health-cmd='wget -q -O - http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1' \
+--health-interval=30s --health-timeout=5s --health-retries=3
 ```
 
 An example `docker-compose.yaml` is included that runs two services writing into the same local `./data` directory:
@@ -74,11 +85,14 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `POLL_INTERVAL`  | no       | `1m`     | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `HTTP_TIMEOUT`   | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`       | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
+| `HEARTBEAT_INTERVAL` | no    | `5m`     | Interval for periodic “still alive” heartbeat log messages. |
 | `ENABLE_WEBHOOK` | no       | `false`  | When `true`, start an HTTP server that accepts `POST /` to trigger an immediate sync. |
 | `WEBHOOK_ADDR`   | no       | `:8080`  | Address the webhook server listens on (e.g. `127.0.0.1:9000`). |
 | `ENABLE_SSE`     | no       | `false`  | When `true`, connect to `SSE_URL` and trigger a sync on each event. |
 | `SSE_URL`        | cond.    | —        | Required when `ENABLE_SSE=true`. URL of the SSE stream. |
 | `ENABLE_HTTP3`   | no       | `false`  | When `true`, use HTTP/3 (QUIC) as the primary transport with automatic fallback. |
+| `ENABLE_HEARTBEAT` | no     | `false`  | When `true`, start an HTTP heartbeat endpoint for liveness checks. |
+| `HEARTBEAT_ADDR` | no       | `:8081`  | Address the heartbeat server listens on (e.g. `127.0.0.1:8081`). |
 
 ### Examples
 
@@ -108,6 +122,12 @@ Trigger an immediate sync manually (when webhook is enabled):
 
 ```sh
 curl -X POST http://localhost:8080/
+```
+
+Heartbeat endpoint check (when enabled):
+
+```sh
+curl http://127.0.0.1:8081/healthz
 ```
 
 ## Design Decisions
