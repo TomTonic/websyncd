@@ -29,6 +29,35 @@ OUTPUT_PATH=/var/data/data.json \
 ./websyncd
 ```
 
+### Docker
+
+Build the container image:
+
+```sh
+docker build -t websyncd .
+```
+
+Run a single sync service:
+
+```sh
+docker run --rm \
+  -e RESOURCE_URL=https://example.com/data.json \
+  -e OUTPUT_PATH=/data/data.json \
+  -v "$(pwd)/data:/data" \
+  websyncd
+```
+
+An example `docker-compose.yaml` is included that runs two services writing into the same local `./data` directory:
+
+- `adguard-filter` downloads `https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt` into `./data/adguard-filter.txt`
+- `stevenblack-hosts` downloads `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts` into `./data/stevenblack-hosts.txt`
+
+Start both services:
+
+```sh
+docker compose up -d --build
+```
+
 ### Environment Variables
 
 | Variable         | Required | Default  | Description |
@@ -94,4 +123,3 @@ When `ENABLE_HTTP3=true`, requests are attempted over QUIC first. For requests w
 ## License
 
 See [LICENSE](LICENSE).
-
