@@ -46,7 +46,7 @@ docker run --rm \
   -e RESOURCE_URL=https://example.com/data.json \
   -e OUTPUT_PATH=/data/data.json \
   -e ENABLE_HEARTBEAT=true \
-  -e HEARTBEAT_ADDR=127.0.0.1:8081 \
+  -e HEARTBEAT_ADDR=:8081 \
   -v "$(pwd)/data:/data" \
   ghcr.io/tomtonic/websyncd:latest
 ```

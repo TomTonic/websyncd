@@ -277,8 +277,6 @@ func (s *healthState) recordSyncFailure(now time.Time, err error) {
 	s.lastFailureAt = now
 	if err != nil {
 		s.lastError = err.Error()
-	} else {
-		s.lastError = ""
 	}
 }
 

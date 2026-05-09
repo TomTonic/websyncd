@@ -6,7 +6,7 @@ services:
       OUTPUT_PATH: /data/adguard-filter.txt
       POLL_INTERVAL: 1h
       ENABLE_HEARTBEAT: "true"
-      HEARTBEAT_ADDR: 127.0.0.1:8081
+      HEARTBEAT_ADDR: :8081
     volumes:
       - ./data:/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
       OUTPUT_PATH: /data/stevenblack-hosts.txt
       POLL_INTERVAL: 1h
       ENABLE_HEARTBEAT: "true"
-      HEARTBEAT_ADDR: 127.0.0.1:8081
+      HEARTBEAT_ADDR: :8081
     volumes:
       - ./data:/data
     healthcheck:
