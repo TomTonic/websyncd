@@ -49,8 +49,8 @@ docker run --rm \
 
 An example `docker-compose.yaml` is included that runs two services writing into the same local `./data` directory:
 
-- `adguard-filter` downloads `https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt` into `./data/adguard-filter.txt`
-- `stevenblack-hosts` downloads `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts` into `./data/stevenblack-hosts.txt`
+- `adguard-filter-updater` downloads `https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt` into `./data/adguard-filter.txt` and keeps it in sync with the online version.
+- `stevenblack-hosts-updater` downloads `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts` into `./data/stevenblack-hosts.txt` and keeps it in sync with the online version.
 
 Start both services:
 
@@ -63,7 +63,7 @@ docker compose up -d
 - **CI** (`.github/workflows/ci.yaml`) runs build, test, and `golangci-lint` (`latest`) on GitHub Actions and uploads Linux binary artifacts for amd64, arm64, armv7, and armv6.
 - **Release** (`.github/workflows/release.yaml`) runs on `v*` tag pushes, waits for successful CI completion for the same commit, then packages those CI artifacts into a multi-arch Docker image and pushes it to GHCR.
 
-The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v6). The `Dockerfile` is intentionally packaging-only and does not compile source code itself.
+The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd64, linux/arm64, linux/arm/v7, linux/arm/v6).
 
 ### Environment Variables
 
