@@ -48,4 +48,3 @@ func TestLoadFromEnvHeartbeatOverrides(t *testing.T) {
 		t.Fatalf("HeartbeatInterval = %s, want %s", cfg.HeartbeatInterval, 30*time.Second)
 	}
 }
-
