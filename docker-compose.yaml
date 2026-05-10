@@ -5,8 +5,16 @@ services:
       RESOURCE_URL: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
       OUTPUT_PATH: /data/adguard-filter.txt
       POLL_INTERVAL: 1h
+      ENABLE_HEARTBEAT: "true"
+      HEARTBEAT_ADDR: :8081
     volumes:
       - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   stevenblack-hosts-updater:
@@ -15,6 +23,14 @@ services:
       RESOURCE_URL: https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
       OUTPUT_PATH: /data/stevenblack-hosts.txt
       POLL_INTERVAL: 1h
+      ENABLE_HEARTBEAT: "true"
+      HEARTBEAT_ADDR: :8081
     volumes:
       - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
