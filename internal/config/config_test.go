@@ -11,11 +11,10 @@ import (
 // This test covers the config package LoadFromEnv function.
 //
 // It clears all heartbeat-related environment variables and asserts that
-// EnableHeartbeat is false and HeartbeatAddr is ":8081".
+// HeartbeatAddr is empty by default (no HTTP heartbeat endpoint started).
 func TestLoadFromEnvHeartbeatDefaults(t *testing.T) {
 	t.Setenv("RESOURCE_URL", "https://example.invalid/data")
 	t.Setenv("OUTPUT_PATH", "/tmp/data.txt")
-	t.Setenv("ENABLE_HEARTBEAT", "")
 	t.Setenv("HEARTBEAT_ADDR", "")
 	// HEARTBEAT_INTERVAL removed; no interval-based heartbeat logging anymore.
 
@@ -23,11 +22,8 @@ func TestLoadFromEnvHeartbeatDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromEnv() error = %v", err)
 	}
-	if cfg.EnableHeartbeat {
-		t.Fatalf("EnableHeartbeat = true, want false")
-	}
-	if cfg.HeartbeatAddr != ":8081" {
-		t.Fatalf("HeartbeatAddr = %q, want %q", cfg.HeartbeatAddr, ":8081")
+	if cfg.HeartbeatAddr != "" {
+		t.Fatalf("HeartbeatAddr = %q, want empty", cfg.HeartbeatAddr)
 	}
 }
 
@@ -36,20 +32,16 @@ func TestLoadFromEnvHeartbeatDefaults(t *testing.T) {
 //
 // This test covers the config package LoadFromEnv function.
 //
-// It sets ENABLE_HEARTBEAT=true with a custom address value and asserts that
-// the field is reflected correctly in the returned Config.
+// It sets HEARTBEAT_ADDR and asserts that the field is reflected correctly
+// in the returned Config.
 func TestLoadFromEnvHeartbeatOverrides(t *testing.T) {
 	t.Setenv("RESOURCE_URL", "https://example.invalid/data")
 	t.Setenv("OUTPUT_PATH", "/tmp/data.txt")
-	t.Setenv("ENABLE_HEARTBEAT", "true")
 	t.Setenv("HEARTBEAT_ADDR", "127.0.0.1:9090")
 
 	cfg, err := LoadFromEnv()
 	if err != nil {
 		t.Fatalf("LoadFromEnv() error = %v", err)
-	}
-	if !cfg.EnableHeartbeat {
-		t.Fatalf("EnableHeartbeat = false, want true")
 	}
 	if cfg.HeartbeatAddr != "127.0.0.1:9090" {
 		t.Fatalf("HeartbeatAddr = %q, want %q", cfg.HeartbeatAddr, "127.0.0.1:9090")

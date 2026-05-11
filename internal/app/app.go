@@ -52,8 +52,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 		logger = log.Default()
 	}
 	logger.Printf(
-		"starting websyncd: resource=%s output=%s poll_interval=%s webhook=%t sse=%t heartbeat_endpoint=%t http3=%t",
-		cfg.ResourceURL, cfg.OutputPath, cfg.PollInterval, cfg.EnableWebhook, cfg.EnableSSE, cfg.EnableHeartbeat, cfg.EnableHTTP3,
+		"starting websyncd: resource=%s output=%s poll_interval=%s webhook=%t sse=%t heartbeat_addr=%q http3=%t",
+		cfg.ResourceURL, cfg.OutputPath, cfg.PollInterval, cfg.EnableWebhook, cfg.EnableSSE, cfg.HeartbeatAddr, cfg.EnableHTTP3,
 	)
 
 	doer, closeClient := httpclient.New(cfg.HTTPTimeout, cfg.EnableHTTP3)
@@ -104,7 +104,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	if cfg.EnableSSE {
 		go startSSE(signalCtx, doer, cfg.SSEURL, trigger, logger)
 	}
-	if cfg.EnableHeartbeat {
+	// Start heartbeat endpoint only when HEARTBEAT_ADDR is explicitly set.
+	if cfg.HeartbeatAddr != "" {
 		go startHeartbeat(signalCtx, cfg.HeartbeatAddr, health, logger)
 	}
 
