@@ -1,6 +1,6 @@
 module github.com/TomTonic/websyncd
 
-go 1.26.2
+go 1.26.3
 
 require github.com/quic-go/quic-go v0.59.1
 
