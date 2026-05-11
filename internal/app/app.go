@@ -52,8 +52,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 		logger = log.Default()
 	}
 	logger.Printf(
-		"starting websyncd: resource=%s output=%s poll_interval=%s webhook=%t sse=%t heartbeat_endpoint=%t heartbeat_interval=%s http3=%t",
-		cfg.ResourceURL, cfg.OutputPath, cfg.PollInterval, cfg.EnableWebhook, cfg.EnableSSE, cfg.EnableHeartbeat, cfg.HeartbeatInterval, cfg.EnableHTTP3,
+		"starting websyncd: resource=%s output=%s poll_interval=%s webhook=%t sse=%t heartbeat_endpoint=%t http3=%t",
+		cfg.ResourceURL, cfg.OutputPath, cfg.PollInterval, cfg.EnableWebhook, cfg.EnableSSE, cfg.EnableHeartbeat, cfg.EnableHTTP3,
 	)
 
 	doer, closeClient := httpclient.New(cfg.HTTPTimeout, cfg.EnableHTTP3)
@@ -96,7 +96,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 			}
 		}
 	}()
-	go startHeartbeatLogger(signalCtx, cfg.HeartbeatInterval, health, logger)
+	// heartbeat log messages removed; only heartbeat endpoint (if enabled)
 
 	if cfg.EnableWebhook {
 		go startWebhook(signalCtx, cfg.WebhookAddr, trigger, logger)
@@ -244,22 +244,8 @@ func heartbeatHandler(state *healthState) http.Handler {
 	return mux
 }
 
-func startHeartbeatLogger(ctx context.Context, interval time.Duration, state *healthState, logger *log.Logger) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s := state.snapshot(time.Now())
-			logger.Printf(
-				"heartbeat: uptime=%s sync_total=%d success=%d failure=%d last_success=%s",
-				s.Uptime.Truncate(time.Second), s.SyncTotal, s.SyncSuccess, s.SyncFailure, formatAge(s.LastSuccessAt, s.Now),
-			)
-		}
-	}
-}
+// heartbeat logging removed; liveness should be provided via the configured
+// heartbeat endpoint or an external socket-based liveness check.
 
 type healthState struct {
 	mu            sync.RWMutex

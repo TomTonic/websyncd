@@ -11,7 +11,7 @@ websyncd is a small Go daemon that keeps a local file in sync with a remote HTTP
 - **Atomic file writes** — writes to a temporary file in the same directory, then renames it into place, so readers never see a partial file.
 - **Instance locking** — uses a PID/timestamp lock file in `$TMPDIR` (keyed by a SHA-256 of the resource URL + output path) to prevent two daemons from racing over the same file. Stale locks from crashed processes are cleared automatically after a configurable TTL.
 - **Graceful shutdown** — handles `SIGINT` / `SIGTERM` and stops all goroutines cleanly.
-- **Operational logging** — emits startup, trigger, sync success/failure, SSE/webhook lifecycle, periodic heartbeat, and shutdown logs.
+-- **Operational logging** — emits startup, trigger, sync success/failure, SSE/webhook lifecycle, and shutdown logs.
 - **Heartbeat endpoint** — optional `GET /healthz` endpoint for liveness monitoring (ideal for Docker `healthcheck`).
 - **Container-friendly configuration** — all settings are read from environment variables; no config files required.
 
@@ -85,7 +85,6 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `POLL_INTERVAL`  | no       | `30m`    | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `HTTP_TIMEOUT`   | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`       | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
-| `HEARTBEAT_INTERVAL` | no    | `5m`     | Interval for periodic “still alive” heartbeat log messages. |
 | `ENABLE_WEBHOOK` | no       | `false`  | When `true`, start an HTTP server that accepts `POST /` to trigger an immediate sync. |
 | `WEBHOOK_ADDR`   | no       | `:8080`  | Address the webhook server listens on (e.g. `127.0.0.1:9000`). |
 | `ENABLE_SSE`     | no       | `false`  | When `true`, connect to `SSE_URL` and trigger a sync on each event. |
