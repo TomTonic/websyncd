@@ -45,7 +45,6 @@ Run a single sync service:
 docker run --rm \
   -e RESOURCE_URL=https://example.com/data.json \
   -e OUTPUT_PATH=/data/data.json \
-  -e ENABLE_HEARTBEAT=true \
   -e HEARTBEAT_ADDR=:8081 \
   -v "$(pwd)/data:/data" \
   ghcr.io/tomtonic/websyncd:latest
@@ -90,8 +89,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `ENABLE_SSE`     | no       | `false`  | When `true`, connect to `SSE_URL` and trigger a sync on each event. |
 | `SSE_URL`        | cond.    | —        | Required when `ENABLE_SSE=true`. URL of the SSE stream. |
 | `ENABLE_HTTP3`   | no       | `false`  | When `true`, use HTTP/3 (QUIC) as the primary transport with automatic fallback. |
-| `ENABLE_HEARTBEAT` | no     | `false`  | When `true`, start an HTTP heartbeat endpoint for liveness checks. |
-| `HEARTBEAT_ADDR` | no       | `:8081`  | Address the heartbeat server listens on (e.g. `127.0.0.1:8081`). |
+| `HEARTBEAT_ADDR` | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081`). |
 
 ### Examples
 
