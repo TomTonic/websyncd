@@ -43,7 +43,7 @@ func LoadFromEnv() (Config, error) {
 	cfg := Config{
 		ResourceURL:       os.Getenv("RESOURCE_URL"),
 		OutputPath:        os.Getenv("OUTPUT_PATH"),
-		PollInterval:      envDuration("POLL_INTERVAL", time.Minute),
+		PollInterval:      envDuration("POLL_INTERVAL", 30*time.Minute),
 		HTTPTimeout:       envDuration("HTTP_TIMEOUT", 30*time.Second),
 		LockTTL:           envDuration("LOCK_TTL", 5*time.Minute),
 		HeartbeatInterval: envDuration("HEARTBEAT_INTERVAL", 5*time.Minute),
