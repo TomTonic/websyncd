@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+// TestHealthStateSnapshot verifies that the health dashboard correctly tallies
+// sync counts and preserves the last error message after a failed sync.
+//
+// This test covers the healthState type in the app package, which feeds both
+// the /healthz HTTP endpoint and the periodic heartbeat log line.
+//
+// It drives the state machine through a success/failure cycle and asserts that
+// snapshot returns the correct counters and error string.
 func TestHealthStateSnapshot(t *testing.T) {
 	started := time.Now().Add(-10 * time.Second)
 	state := newHealthState(started)
@@ -40,6 +48,14 @@ func TestHealthStateSnapshot(t *testing.T) {
 	}
 }
 
+// TestHeartbeatHandlerHealthz verifies that the /healthz endpoint returns a
+// machine-readable health report that operators and monitoring agents can parse.
+//
+// This test covers the heartbeatHandler function in the app package, which
+// serves the liveness probe used in container orchestration environments.
+//
+// It asserts that the response body contains all expected key=value lines,
+// including sync counters and the last error message.
 func TestHeartbeatHandlerHealthz(t *testing.T) {
 	state := newHealthState(time.Now().Add(-20 * time.Second))
 	state.recordSyncStart(time.Now().Add(-6 * time.Second))
@@ -68,6 +84,12 @@ func TestHeartbeatHandlerHealthz(t *testing.T) {
 	}
 }
 
+// TestHeartbeatHandlerMethodNotAllowed verifies that non-GET requests to the
+// /healthz endpoint are rejected with a 405 Method Not Allowed response.
+//
+// This test covers the heartbeatHandler function in the app package.
+//
+// It sends a POST request and asserts both the status code and the Allow header.
 func TestHeartbeatHandlerMethodNotAllowed(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)

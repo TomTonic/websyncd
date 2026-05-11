@@ -10,10 +10,21 @@ import (
 	"strings"
 )
 
+// HTTPDoer is the minimal HTTP interface required by Syncer. *http.Client and
+// httpclient.Doer both satisfy this interface.
 type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
+// Syncer downloads a remote resource to a local file, using HTTP conditional
+// requests (ETag / Last-Modified) to avoid redundant transfers.
+//
+// Client must be set before calling Sync; all other fields are optional.
+// Resource is the URL of the remote resource. OutputPath is the absolute path
+// where the downloaded content is written atomically.
+//
+// A single Syncer instance should be reused across calls so that it can
+// accumulate cache validators between syncs.
 type Syncer struct {
 	Client     HTTPDoer
 	Resource   string
@@ -23,6 +34,20 @@ type Syncer struct {
 	lastModified string
 }
 
+// Sync fetches the remote resource and writes it atomically to OutputPath if the
+// content has changed since the last successful sync.
+//
+// ctx controls the request lifetime; cancellation aborts in-flight HTTP calls
+// and any partial write, leaving the existing OutputPath intact.
+//
+// On the first call, Sync issues a HEAD request to obtain cache validators, then
+// a GET to retrieve the body. Subsequent calls send conditional headers
+// (If-None-Match, If-Modified-Since) so that an unchanged resource results in a
+// single round-trip with no file I/O.
+//
+// Returns nil on success (including when the resource is unchanged). Returns an
+// error if the HTTP request fails, the server returns a non-2xx status, or the
+// atomic write fails.
 func (s *Syncer) Sync(ctx context.Context) error {
 	if s.Client == nil {
 		return fmt.Errorf("http client is required")
