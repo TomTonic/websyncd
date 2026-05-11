@@ -18,7 +18,6 @@ type Config struct {
 	PollInterval  time.Duration
 	HTTPTimeout   time.Duration
 	LockTTL       time.Duration
-	EnableWebhook bool
 	WebhookAddr   string
 	EnableSSE     bool
 	SSEURL        string
@@ -44,8 +43,7 @@ func LoadFromEnv() (Config, error) {
 		PollInterval:  envDuration("POLL_INTERVAL", 30*time.Minute),
 		HTTPTimeout:   envDuration("HTTP_TIMEOUT", 30*time.Second),
 		LockTTL:       envDuration("LOCK_TTL", 5*time.Minute),
-		EnableWebhook: envBool("ENABLE_WEBHOOK"),
-		WebhookAddr:   envString("WEBHOOK_ADDR", ":8080"),
+		WebhookAddr:   envString("WEBHOOK_ADDR", ""),
 		EnableSSE:     envBool("ENABLE_SSE"),
 		SSEURL:        os.Getenv("SSE_URL"),
 		EnableHTTP3:   envBool("ENABLE_HTTP3"),
