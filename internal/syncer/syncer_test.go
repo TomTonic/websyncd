@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -18,7 +19,11 @@ type stubDoer struct {
 }
 
 func (s *stubDoer) Do(req *http.Request) (*http.Response, error) {
-	return s.fn(req)
+	resp, err := s.fn(req)
+	if resp != nil && resp.Request == nil {
+		resp.Request = req
+	}
+	return resp, err
 }
 
 func makeResp(code int, headers map[string]string, body string) *http.Response {
@@ -69,16 +74,19 @@ func TestHeadBehaviors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &Syncer{
-				Client: &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+				Client: &stubDoer{fn: func(_ *http.Request) (*http.Response, error) {
 					return makeResp(tc.code, tc.hdrs, ""), nil
 				}},
 				Resource: filepath.Join(t.TempDir(), "unused"),
 			}
 			s.etag = tc.setETag
 			s.lastModified = tc.setLM
-			resp, need, err := s.head(context.Background())
+			resp, need, _, err := s.head(context.Background())
 			if err != nil {
 				t.Fatalf("head() error = %v", err)
+			}
+			if resp != nil {
+				_ = resp.Body.Close()
 			}
 			if need != tc.wantNeed {
 				t.Fatalf("head() need = %v, want %v (resp=%v)", need, tc.wantNeed, resp)
@@ -87,10 +95,14 @@ func TestHeadBehaviors(t *testing.T) {
 	}
 
 	t.Run("do error", func(t *testing.T) {
-		s := &Syncer{Client: &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+		s := &Syncer{Client: &stubDoer{fn: func(_ *http.Request) (*http.Response, error) {
 			return nil, errors.New("network")
 		}}, Resource: "https://x"}
-		if _, _, err := s.head(context.Background()); err == nil {
+		resp, _, _, err := s.head(context.Background())
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		if err == nil {
 			t.Fatalf("head() succeeded when Do returned error")
 		}
 	})
@@ -105,10 +117,14 @@ func TestWriteAtomically(t *testing.T) {
 		tmp := t.TempDir()
 		out := filepath.Join(tmp, "sub", "out.txt")
 		s := &Syncer{OutputPath: out}
-		if err := s.writeAtomically(io.NopCloser(strings.NewReader("hello"))); err != nil {
+		result, err := s.writeAtomically(io.NopCloser(strings.NewReader("hello")))
+		if err != nil {
 			t.Fatalf("writeAtomically() error = %v", err)
 		}
-		b, err := os.ReadFile(out)
+		if !result.Replaced {
+			t.Fatalf("writeAtomically() did not replace output")
+		}
+		b, err := os.ReadFile(out) //nolint:gosec // G304: test reads from t.TempDir()-controlled path
 		if err != nil {
 			t.Fatalf("ReadFile() error = %v", err)
 		}
@@ -125,8 +141,8 @@ func TestWriteAtomically(t *testing.T) {
 		}
 		out := filepath.Join(dir, "out.txt")
 		s := &Syncer{OutputPath: out}
-		defer os.Chmod(dir, 0o700)
-		if err := s.writeAtomically(io.NopCloser(strings.NewReader("x"))); err == nil {
+		defer func() { _ = os.Chmod(dir, 0o700) }() //nolint:gosec // G302: restoring temp-dir permissions after intentional restriction in test
+		if _, err := s.writeAtomically(io.NopCloser(strings.NewReader("x"))); err == nil {
 			t.Fatalf("writeAtomically() succeeded unexpectedly")
 		}
 	})
@@ -176,7 +192,7 @@ func TestSyncFlows(t *testing.T) {
 		if err := s.Sync(context.Background()); err != nil {
 			t.Fatalf("Sync() error = %v", err)
 		}
-		b, err := os.ReadFile(out)
+		b, err := os.ReadFile(out) //nolint:gosec // G304: test reads from t.TempDir()-controlled path
 		if err != nil {
 			t.Fatalf("ReadFile() error = %v", err)
 		}
@@ -208,6 +224,94 @@ func TestSyncFlows(t *testing.T) {
 			t.Fatalf("Sync() succeeded unexpectedly on GET 500")
 		}
 	})
+}
+
+// TestSyncWithReportSkipsLocalReplaceForIdenticalContent verifies that a
+// restarted daemon does not replace the local file when downloaded bytes are
+// identical to the existing output.
+//
+// This test covers SyncWithReport's local file comparison path in the syncer
+// package.
+//
+// It pre-creates a local file, forces a GET, returns identical content, and
+// asserts that local replacement is skipped with an explanatory reason.
+func TestSyncWithReportSkipsLocalReplaceForIdenticalContent(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "state.txt")
+	if err := os.WriteFile(out, []byte("same-content"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	client := &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodHead {
+			return makeResp(http.StatusMethodNotAllowed, nil, ""), nil
+		}
+		if req.Method == http.MethodGet {
+			return makeResp(http.StatusOK, map[string]string{"Last-Modified": "Wed, 21 Oct 2015 07:28:00 GMT"}, "same-content"), nil
+		}
+		return nil, errors.New("unexpected")
+	}}
+
+	s := &Syncer{Client: client, Resource: "https://example.invalid/resource", OutputPath: out}
+	report, err := s.SyncWithReport(context.Background())
+	if err != nil {
+		t.Fatalf("SyncWithReport() error = %v", err)
+	}
+	if !report.DownloadPerformed {
+		t.Fatalf("DownloadPerformed = false, want true")
+	}
+	if report.LocalReplacePerformed {
+		t.Fatalf("LocalReplacePerformed = true, want false")
+	}
+	if report.LocalReplaceSkipReason == "" {
+		t.Fatalf("LocalReplaceSkipReason is empty")
+	}
+}
+
+// TestSyncWithReportIncludesProtocolAndRate verifies SyncWithReport exposes
+// protocol and transfer metrics for operational logging.
+//
+// This test covers protocol labeling and throughput calculation in SyncWithReport.
+//
+// It performs a successful HEAD+GET flow and asserts protocol, byte count,
+// duration and computed rate fields are present.
+func TestSyncWithReportIncludesProtocolAndRate(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "state.txt")
+
+	client := &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodHead {
+			resp := makeResp(http.StatusMethodNotAllowed, nil, "")
+			resp.ProtoMajor = 2
+			resp.ProtoMinor = 0
+			return resp, nil
+		}
+		if req.Method == http.MethodGet {
+			resp := makeResp(http.StatusOK, map[string]string{"Last-Modified": "Wed, 21 Oct 2015 07:28:00 GMT"}, strings.Repeat("a", 4096))
+			resp.ProtoMajor = 2
+			resp.ProtoMinor = 0
+			return resp, nil
+		}
+		return nil, errors.New("unexpected")
+	}}
+
+	s := &Syncer{Client: client, Resource: "https://example.invalid/resource", OutputPath: out}
+	report, err := s.SyncWithReport(context.Background())
+	if err != nil {
+		t.Fatalf("SyncWithReport() error = %v", err)
+	}
+	if report.Protocol == "" || !strings.Contains(report.Protocol, "HTTP/") {
+		t.Fatalf("Protocol = %q, want HTTP protocol label", report.Protocol)
+	}
+	if report.TransferBytes <= 0 {
+		t.Fatalf("TransferBytes = %d, want > 0", report.TransferBytes)
+	}
+	if report.TransferDuration <= 0 {
+		t.Fatalf("TransferDuration = %s, want > 0", report.TransferDuration)
+	}
+	if report.TransferRateBytesPerSec <= 0 {
+		t.Fatalf("TransferRateBytesPerSec = %f, want > 0", report.TransferRateBytesPerSec)
+	}
 }
 
 type response struct {
@@ -357,6 +461,36 @@ func (r *cancelReadCloser) Read(_ []byte) (int, error) {
 
 func (r *cancelReadCloser) Close() error { return nil }
 
+type failingReadCloser struct {
+	remaining int
+	chunkSize int
+	delay     time.Duration
+	err       error
+}
+
+func (r *failingReadCloser) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		return 0, r.err
+	}
+	if r.delay > 0 {
+		time.Sleep(r.delay)
+	}
+	n := r.chunkSize
+	if n > r.remaining {
+		n = r.remaining
+	}
+	if n > len(p) {
+		n = len(p)
+	}
+	for i := 0; i < n; i++ {
+		p[i] = 'x'
+	}
+	r.remaining -= n
+	return n, nil
+}
+
+func (r *failingReadCloser) Close() error { return nil }
+
 // TestSyncCancellationStopsDownloadAndCleansTempFile verifies that shutting down
 // the service while a download is in progress does not leave stale temp files.
 //
@@ -436,5 +570,72 @@ func TestHeadUsesConditionalHeaders(t *testing.T) {
 	}
 	if got := fc.headers[2].Get("If-Modified-Since"); got != "Wed, 21 Oct 2015 07:28:00 GMT" {
 		t.Fatalf("If-Modified-Since = %q", got)
+	}
+}
+
+// TestSyncWithReportLogsProgressAndPartialTransferOnFailure verifies that users
+// can trace long-running downloads via periodic rate logs and still see
+// transferred bytes if the stream aborts.
+//
+// This test covers streaming observability in SyncWithReport within the syncer
+// package.
+//
+// It simulates a GET body that transfers data in chunks and then fails,
+// asserting progress logs are emitted and the partial transfer amount is kept
+// in the report returned with the error.
+func TestSyncWithReportLogsProgressAndPartialTransferOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "state.txt")
+	logLines := make([]string, 0, 8)
+
+	client := &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+		if req.Method == http.MethodHead {
+			resp := makeResp(http.StatusMethodNotAllowed, nil, "")
+			resp.ProtoMajor = 2
+			resp.ProtoMinor = 0
+			return resp, nil
+		}
+		if req.Method == http.MethodGet {
+			resp := makeResp(http.StatusOK, nil, "")
+			resp.ProtoMajor = 2
+			resp.ProtoMinor = 0
+			resp.Body = &failingReadCloser{
+				remaining: 4096,
+				chunkSize: 1024,
+				delay:     3 * time.Millisecond,
+				err:       errors.New("upstream reset"),
+			}
+			return resp, nil
+		}
+		return nil, errors.New("unexpected")
+	}}
+
+	s := &Syncer{
+		Client:              client,
+		Resource:            "https://example.invalid/resource",
+		OutputPath:          out,
+		ProgressLogInterval: 1 * time.Millisecond,
+		Logf: func(format string, args ...any) {
+			logLines = append(logLines, fmt.Sprintf(format, args...))
+		},
+	}
+
+	report, err := s.SyncWithReport(context.Background())
+	if err == nil {
+		t.Fatalf("SyncWithReport() error = nil, want transfer error")
+	}
+	if report.TransferBytes <= 0 {
+		t.Fatalf("TransferBytes = %d, want > 0 on partial transfer", report.TransferBytes)
+	}
+
+	joined := strings.Join(logLines, "\n")
+	if !strings.Contains(joined, "sync GET response: status=OK") {
+		t.Fatalf("missing early GET response log, logs:\n%s", joined)
+	}
+	if !strings.Contains(joined, "sync download progress:") {
+		t.Fatalf("missing periodic progress log, logs:\n%s", joined)
+	}
+	if !strings.Contains(joined, "sync download failed:") || !strings.Contains(joined, "transferred=") {
+		t.Fatalf("missing failure log with transferred bytes, logs:\n%s", joined)
 	}
 }

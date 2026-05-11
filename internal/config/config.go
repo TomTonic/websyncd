@@ -47,7 +47,7 @@ func LoadFromEnv() (Config, error) {
 		LockTTL:          envDuration("LOCK_TTL", 5*time.Minute),
 		WebhookAddr:      envString("WEBHOOK_ADDR", ""),
 		ResourceEventURL: envString("RESOURCE_EVENT_URL", ""),
-		EnableHTTP3:      envBool("ENABLE_HTTP3"),
+		EnableHTTP3:      envEnableHTTP3(),
 		HeartbeatAddr:    envString("HEARTBEAT_ADDR", ""),
 	}
 
@@ -99,8 +99,8 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 	return d
 }
 
-func envBool(name string) bool {
-	v := os.Getenv(name)
+func envEnableHTTP3() bool {
+	v := os.Getenv("ENABLE_HTTP3")
 	if v == "" {
 		return false
 	}
