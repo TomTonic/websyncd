@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -686,4 +687,81 @@ func TestWriteAtomicallyEnforcesMaxDownloadBytes(t *testing.T) {
 			t.Fatalf("writeAtomically() did not replace output")
 		}
 	})
+}
+
+// TestWriteAtomicallyDefaultAttributesForNewFile verifies that when no
+// explicit output attributes are configured and no target file exists yet,
+// the created file is world-readable by default.
+//
+// This test covers the default attribute policy in writeAtomically.
+//
+// It writes a new file and asserts mode has ugo+r (at least 0444 bits).
+func TestWriteAtomicallyDefaultAttributesForNewFile(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "out.txt")
+	s := &Syncer{OutputPath: out}
+	if _, err := s.writeAtomically(strings.NewReader("hello")); err != nil {
+		t.Fatalf("writeAtomically() error = %v", err)
+	}
+
+	st, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("Stat() error = %v", err)
+	}
+	if st.Mode().Perm()&0o444 != 0o444 {
+		t.Fatalf("mode = %#o, want ugo+r bits set", st.Mode().Perm())
+	}
+}
+
+// TestWriteAtomicallyInheritsExistingFileAttributes verifies that when no
+// explicit output attributes are configured and a target file already exists,
+// permissions and ownership are inherited by the replacement file.
+//
+// This test covers attribute inheritance in writeAtomically for replacements.
+//
+// It pre-creates a file with specific mode and asserts the replaced file keeps
+// the same mode and owner/group ids.
+func TestWriteAtomicallyInheritsExistingFileAttributes(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "out.txt")
+	//nolint:gosec // Test intentionally verifies inherited group-readable mode.
+	if err := os.WriteFile(out, []byte("old"), 0o640); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	beforeInfo, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("Stat(before) error = %v", err)
+	}
+	beforeUID, beforeGID, err := testFileOwnerGroup(beforeInfo)
+	if err != nil {
+		t.Fatalf("testFileOwnerGroup(before) error = %v", err)
+	}
+
+	s := &Syncer{OutputPath: out}
+	if _, writeErr := s.writeAtomically(strings.NewReader("new")); writeErr != nil {
+		t.Fatalf("writeAtomically() error = %v", writeErr)
+	}
+
+	afterInfo, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("Stat(after) error = %v", err)
+	}
+	afterUID, afterGID, err := testFileOwnerGroup(afterInfo)
+	if err != nil {
+		t.Fatalf("testFileOwnerGroup(after) error = %v", err)
+	}
+
+	if afterInfo.Mode().Perm() != beforeInfo.Mode().Perm() {
+		t.Fatalf("mode changed: got %#o want %#o", afterInfo.Mode().Perm(), beforeInfo.Mode().Perm())
+	}
+	if afterUID != beforeUID || afterGID != beforeGID {
+		t.Fatalf("owner/group changed: got %d:%d want %d:%d", afterUID, afterGID, beforeUID, beforeGID)
+	}
+}
+
+func testFileOwnerGroup(info os.FileInfo) (uid int, gid int, err error) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat == nil {
+		return 0, 0, fmt.Errorf("missing syscall stat metadata")
+	}
+	return int(stat.Uid), int(stat.Gid), nil
 }

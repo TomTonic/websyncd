@@ -83,6 +83,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `RESOURCE_URL`       | yes      | —        | URL of the remote resource to sync. Must be a valid `http://` or `https://` URL.     |
 | `RESOURCE_EVENT_URL` | no       | `—`      | If set, connect to this Server-Sent Events (SSE) stream and trigger a sync attempt on each event. Must be a valid `http://` or `https://` URL. |
 | `OUTPUT_PATH`        | yes      | —        | Local file path to write the resource to. Parent directories are created automatically. |
+| `OUTPUT_FILE_ATTRIBUTES` | no   | `—`      | Optional output file attributes in format `uid:gid:mode` (for example `1000:1000:0644`). When set, replacements are written with exactly these owner/group/permissions. When unset and target exists, owner/group/permissions are inherited from the existing file. When unset and target does not exist, owner/group follow process defaults and permissions default to `ugo+r` (`0644`). |
 | `POLL_INTERVAL`      | no       | `30m`    | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `WEBHOOK_ADDR`       | no       | `—`      | If set, start an HTTP webhook server that accepts `POST /` to trigger an immediate sync attempt (e.g. `127.0.0.1:8080` or `:9000`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
 | `HEARTBEAT_ADDR`     | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081` or `:8081`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
@@ -133,6 +134,8 @@ Every sync cycle starts with a conditional `HEAD` request carrying `If-None-Matc
 
 ### Atomic writes
 The downloaded body is written to a temporary file (`.websyncd-*`) in the same directory as the target, then moved into place with `os.Rename`. Because rename is atomic on POSIX systems (same filesystem), consumers reading the file will always see either the old complete version or the new complete version — never a partial write.
+
+When `OUTPUT_FILE_ATTRIBUTES` is not configured, replacement files inherit owner/group/permissions from the existing target file. On first write (no existing target), default process owner/group are used and permissions default to `0644` (`ugo+r`).
 
 ### Trigger coalescing
 All sync sources (poll timer, webhook, SSE) feed into a single buffered channel of capacity 1. If multiple triggers arrive while a sync is already in progress, they collapse into a single pending re-check, preventing redundant back-to-back fetches.

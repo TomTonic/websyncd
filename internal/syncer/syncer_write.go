@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -131,6 +132,25 @@ func (s *Syncer) writeAtomically(body io.Reader) (writeResult, error) {
 	}
 	result.NewFileSize = newStat.Size()
 
+	mode, uid, gid, applyOwnerGroup, err := s.resolveOutputFileAttributes()
+	if err != nil {
+		return result, err
+	}
+	if chmodErr := os.Chmod(tmpPath, mode); chmodErr != nil {
+		return result, chmodErr
+	}
+	if applyOwnerGroup {
+		tmpUID, tmpGID, idsErr := fileOwnerGroup(newStat)
+		if idsErr != nil {
+			return result, idsErr
+		}
+		if tmpUID != uid || tmpGID != gid {
+			if chownErr := os.Chown(tmpPath, uid, gid); chownErr != nil {
+				return result, chownErr
+			}
+		}
+	}
+
 	if equal, eqErr := filesEqualIfPresent(tmpPath, s.OutputPath); eqErr != nil {
 		return result, eqErr
 	} else if equal {
@@ -148,6 +168,36 @@ func (s *Syncer) writeAtomically(body io.Reader) (writeResult, error) {
 	s.logf("sync file replaced atomically: new_size=%s", formatBytes(result.NewFileSize))
 	cleanup = false
 	return result, nil
+}
+
+func (s *Syncer) resolveOutputFileAttributes() (mode os.FileMode, uid int, gid int, applyOwnerGroup bool, err error) {
+	if s.OutputFileAttributesSet {
+		return s.OutputFileMode, s.OutputFileUID, s.OutputFileGID, true, nil
+	}
+
+	info, statErr := os.Stat(s.OutputPath)
+	if statErr == nil {
+		existingUID, existingGID, idsErr := fileOwnerGroup(info)
+		if idsErr != nil {
+			return 0, 0, 0, false, idsErr
+		}
+		return info.Mode().Perm(), existingUID, existingGID, true, nil
+	}
+	if !os.IsNotExist(statErr) {
+		return 0, 0, 0, false, statErr
+	}
+
+	// Default for first-time write when no explicit attributes are configured:
+	// owner/group from process defaults and world-readable permissions.
+	return 0o644, 0, 0, false, nil
+}
+
+func fileOwnerGroup(info os.FileInfo) (uid int, gid int, err error) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat == nil {
+		return 0, 0, fmt.Errorf("unable to resolve file owner/group from file metadata")
+	}
+	return int(stat.Uid), int(stat.Gid), nil
 }
 
 // filesEqualIfPresent returns true if two files exist and have identical

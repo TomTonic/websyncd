@@ -70,12 +70,16 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	logger.Printf("lock acquired")
 
 	s := &syncer.Syncer{
-		Client:              doer,
-		Resource:            cfg.ResourceURL,
-		OutputPath:          cfg.OutputPath,
-		Logf:                logger.Printf,
-		ProgressLogInterval: cfg.DownloadProgressInterval,
-		MaxDownloadBytes:    cfg.MaxDownloadBytes,
+		Client:                  doer,
+		Resource:                cfg.ResourceURL,
+		OutputPath:              cfg.OutputPath,
+		Logf:                    logger.Printf,
+		ProgressLogInterval:     cfg.DownloadProgressInterval,
+		MaxDownloadBytes:        cfg.MaxDownloadBytes,
+		OutputFileAttributesSet: cfg.OutputFileAttributesSet,
+		OutputFileMode:          cfg.OutputFileMode,
+		OutputFileUID:           cfg.OutputFileUID,
+		OutputFileGID:           cfg.OutputFileGID,
 	}
 	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

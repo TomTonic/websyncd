@@ -28,12 +28,16 @@ type HTTPDoer interface {
 // A single Syncer instance should be reused across calls so that it can
 // accumulate cache validators between syncs.
 type Syncer struct {
-	Client              HTTPDoer
-	Resource            string
-	OutputPath          string
-	Logf                func(format string, args ...any)
-	ProgressLogInterval time.Duration
-	MaxDownloadBytes    int64
+	Client                  HTTPDoer
+	Resource                string
+	OutputPath              string
+	Logf                    func(format string, args ...any)
+	ProgressLogInterval     time.Duration
+	MaxDownloadBytes        int64
+	OutputFileAttributesSet bool
+	OutputFileMode          os.FileMode
+	OutputFileUID           int
+	OutputFileGID           int
 
 	etag         string
 	lastModified string
