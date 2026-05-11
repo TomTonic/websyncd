@@ -1,3 +1,4 @@
+// Package main is the entry point for the websyncd daemon.
 package main
 
 import (
@@ -15,7 +16,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := app.Run(context.Background(), cfg, log.Default()); err != nil {
+	if err := app.Run(context.Background(), &cfg, log.Default()); err != nil {
 		log.Printf("websyncd stopped with error: %v", err)
 		os.Exit(1)
 	}

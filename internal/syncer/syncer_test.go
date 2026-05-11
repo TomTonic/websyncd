@@ -96,7 +96,7 @@ func TestSyncDownloadsWhenHeadChanged(t *testing.T) {
 	if got, want := strings.Join(fc.calls, ","), "HEAD,GET"; got != want {
 		t.Fatalf("calls = %s, want %s", got, want)
 	}
-	content, err := os.ReadFile(out)
+	content, err := os.ReadFile(out) //nolint:gosec // G304: test uses a temp-dir path from t.TempDir
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -118,7 +118,7 @@ func TestSyncReplacesTargetAtomically(t *testing.T) {
 	// Code perspective: existing target must become complete new payload.
 	dir := t.TempDir()
 	out := filepath.Join(dir, "state.txt")
-	if err := os.WriteFile(out, []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(out, []byte("old"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestSyncReplacesTargetAtomically(t *testing.T) {
 		t.Fatalf("Sync() error = %v", err)
 	}
 
-	content, err := os.ReadFile(out)
+	content, err := os.ReadFile(out) //nolint:gosec // G304: test uses a temp-dir path from t.TempDir
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}

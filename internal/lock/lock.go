@@ -1,3 +1,5 @@
+// Package lock provides an exclusive file-system lock to prevent duplicate
+// websyncd instances from syncing the same resource simultaneously.
 package lock
 
 import (
@@ -54,7 +56,7 @@ func Acquire(url, outputPath string, ttl time.Duration, now Clock) (*Lock, error
 	content := fmt.Sprintf("pid=%d\ntimestamp=%d\n", os.Getpid(), now().Unix())
 
 	for attempt := 0; attempt < 2; attempt++ {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // G304: path is derived from a SHA-256 hash, not raw user input
 		if err == nil {
 			_, writeErr := f.WriteString(content)
 			closeErr := f.Close()
@@ -106,7 +108,7 @@ func lockPath(url, outputPath string) string {
 }
 
 func isStale(path string, ttl time.Duration, now Clock) bool {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: path is derived from a SHA-256 hash, not raw user input
 	if err != nil {
 		return true
 	}

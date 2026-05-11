@@ -1,3 +1,5 @@
+// Package syncer downloads a remote resource to a local file using conditional
+// HTTP requests (ETag / Last-Modified) to avoid redundant transfers.
 package syncer
 
 import (
@@ -130,7 +132,7 @@ func (s *Syncer) head(ctx context.Context) (*http.Response, bool, error) {
 
 func (s *Syncer) writeAtomically(body io.Reader) error {
 	dir := filepath.Dir(s.OutputPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
@@ -150,13 +152,13 @@ func (s *Syncer) writeAtomically(body io.Reader) error {
 	if _, err = io.Copy(tmp, body); err != nil {
 		return err
 	}
-	if err = tmp.Sync(); err != nil {
+	if err := tmp.Sync(); err != nil {
 		return err
 	}
-	if err = tmp.Close(); err != nil {
+	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(tmpPath, s.OutputPath); err != nil {
+	if err := os.Rename(tmpPath, s.OutputPath); err != nil {
 		return err
 	}
 	cleanup = false
