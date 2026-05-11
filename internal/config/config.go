@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// Config holds the runtime configuration for websyncd, populated from environment
+// variables via LoadFromEnv. All fields are read-only after construction; do not
+// mutate a Config that has been passed to app.Run.
 type Config struct {
 	ResourceURL       string
 	OutputPath        string
@@ -23,6 +26,17 @@ type Config struct {
 	HeartbeatAddr     string
 }
 
+// LoadFromEnv constructs a Config by reading well-known environment variables.
+//
+// Required variables: RESOURCE_URL and OUTPUT_PATH. Optional variables and their
+// defaults are documented in the project README. When ENABLE_SSE=true, SSE_URL
+// must also be set.
+//
+// Returns a fully populated Config on success, or an error describing the first
+// missing or invalid required variable.
+//
+// Typical call site is app.LoadConfigFromEnv, which delegates here and is the
+// recommended entry point from main.
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
 		ResourceURL:       os.Getenv("RESOURCE_URL"),

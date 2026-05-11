@@ -40,6 +40,13 @@ func (f *fakeClient) Do(req *http.Request) (*http.Response, error) {
 	return item.resp, item.err
 }
 
+// TestSyncSkipsGetWhenHeadReturns304 verifies that an unchanged remote resource
+// does not trigger a re-download, avoiding unnecessary bandwidth and file I/O.
+//
+// This test covers the Sync method in the syncer package.
+//
+// It queues a single HEAD 304 response and asserts that Sync returns nil after
+// only one request, with no GET issued.
 func TestSyncSkipsGetWhenHeadReturns304(t *testing.T) {
 	// User perspective: no remote change should avoid re-downloading content.
 	// System perspective: HEAD 304 means local file is already current.
@@ -65,6 +72,13 @@ func TestSyncSkipsGetWhenHeadReturns304(t *testing.T) {
 	}
 }
 
+// TestSyncDownloadsWhenHeadChanged verifies that a changed remote resource is
+// fetched and written to disk so users always have the latest content.
+//
+// This test covers the Sync method in the syncer package.
+//
+// It queues a HEAD 200 (new ETag) followed by GET 200 with body "new-data" and
+// asserts that both requests are made and the file contains the expected bytes.
 func TestSyncDownloadsWhenHeadChanged(t *testing.T) {
 	// User perspective: changed remote content should be downloaded.
 	// System perspective: HEAD indicates change, then GET fetches bytes.
@@ -91,6 +105,13 @@ func TestSyncDownloadsWhenHeadChanged(t *testing.T) {
 	}
 }
 
+// TestSyncReplacesTargetAtomically verifies that an in-progress download never
+// leaves a partially written file visible to readers.
+//
+// This test covers the writeAtomically helper used by Sync in the syncer package.
+//
+// It pre-creates the target file, triggers a sync, and then asserts the file
+// contains the full new payload and no temporary files remain in the directory.
 func TestSyncReplacesTargetAtomically(t *testing.T) {
 	// User perspective: updated file should never be partially written.
 	// System perspective: download writes temp file and renames over target.
@@ -139,6 +160,15 @@ func (r *cancelReadCloser) Read(_ []byte) (int, error) {
 
 func (r *cancelReadCloser) Close() error { return nil }
 
+// TestSyncCancellationStopsDownloadAndCleansTempFile verifies that shutting down
+// the service while a download is in progress does not leave stale temp files.
+//
+// This test covers context-cancellation handling in the Sync method of the
+// syncer package.
+//
+// It uses a fake body whose Read blocks until the context is cancelled, then
+// asserts that Sync returns context.Canceled and that no temporary file remains
+// in the output directory.
 func TestSyncCancellationStopsDownloadAndCleansTempFile(t *testing.T) {
 	// User perspective: service shutdown should abort in-progress download safely.
 	// System perspective: canceled context must stop stream and skip replacing target.
@@ -175,6 +205,15 @@ func TestSyncCancellationStopsDownloadAndCleansTempFile(t *testing.T) {
 	}
 }
 
+// TestHeadUsesConditionalHeaders verifies that repeated syncs send HTTP cache
+// validators so that an unchanged resource requires only one round-trip.
+//
+// This test covers the conditional-request logic in the Sync method of the
+// syncer package.
+//
+// It performs two syncs: the first fetches real content, the second sends
+// If-None-Match and If-Modified-Since headers taken from the first response,
+// and asserts those headers are present on the second HEAD request.
 func TestHeadUsesConditionalHeaders(t *testing.T) {
 	// User perspective: repeat sync should use cache validators.
 	// System perspective: previous ETag/Last-Modified become HEAD conditionals.

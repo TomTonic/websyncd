@@ -12,14 +12,36 @@ import (
 	"time"
 )
 
+// ErrLocked is returned by Acquire when a live (non-stale) lock file already
+// exists for the given resource/output combination.
 var ErrLocked = errors.New("lock already held")
 
+// Clock is a function that returns the current time. Passing a custom Clock to
+// Acquire allows tests to control lock expiry without real-time delays.
 type Clock func() time.Time
 
+// Lock represents an exclusive file-system lock acquired by Acquire. It must be
+// released via Release when the work it guards is complete.
 type Lock struct {
 	path string
 }
 
+// Acquire creates an exclusive lock for the given url+outputPath pair.
+//
+// url and outputPath are hashed together to produce a unique lock-file name
+// inside os.TempDir(), so two Acquire calls with different combinations do not
+// interfere.
+//
+// ttl is the maximum age of an existing lock before it is considered stale and
+// removed automatically; pass 0 to use the default of 5 minutes.
+//
+// now is a Clock used to compare timestamps; pass time.Now for production use.
+// Passing a custom Clock is useful in tests to simulate stale locks.
+//
+// Returns a *Lock on success. Returns ErrLocked if a live lock already exists.
+// Returns another error if the file system operation fails.
+//
+// The caller must call Release on the returned Lock when done.
 func Acquire(url, outputPath string, ttl time.Duration, now Clock) (*Lock, error) {
 	if now == nil {
 		now = time.Now
@@ -62,6 +84,10 @@ func Acquire(url, outputPath string, ttl time.Duration, now Clock) (*Lock, error
 	return nil, ErrLocked
 }
 
+// Release deletes the lock file, allowing another process to acquire it.
+//
+// Release is idempotent: calling it on a nil receiver or after the file has
+// already been removed returns nil. It is safe to call via defer.
 func (l *Lock) Release() error {
 	if l == nil || l.path == "" {
 		return nil

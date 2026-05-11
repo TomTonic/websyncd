@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+// TestAcquirePreventsConcurrentExecution verifies that starting a second
+// identical daemon instance is blocked while the first is running.
+//
+// This test covers the Acquire function in the lock package, which guards
+// against duplicate syncer processes writing to the same output file.
+//
+// It acquires a lock, attempts a second acquisition for the same
+// resource/output pair, and asserts ErrLocked is returned. It then releases
+// the first lock and confirms a third acquisition succeeds.
 func TestAcquirePreventsConcurrentExecution(t *testing.T) {
 	// User perspective: starting a second identical daemon instance should be blocked.
 	// System perspective: first lock acquisition wins, second fails until release.
@@ -56,6 +65,13 @@ func TestAcquirePreventsConcurrentExecution(t *testing.T) {
 	_ = third.Release()
 }
 
+// TestAcquireRemovesStaleLock verifies that a lock left by a crashed process
+// is cleaned up automatically so the daemon can self-heal.
+//
+// This test covers the Acquire function in the lock package.
+//
+// It writes a lock file with a timestamp two hours in the past, then asserts
+// that Acquire succeeds by treating the old lock as expired.
 func TestAcquireRemovesStaleLock(t *testing.T) {
 	// User perspective: stale crashed process lock should self-heal automatically.
 	// System perspective: expired timestamp permits lock takeover.

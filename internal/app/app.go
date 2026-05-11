@@ -21,10 +21,30 @@ import (
 	"github.com/TomTonic/websyncd/internal/syncer"
 )
 
+// LoadConfigFromEnv reads the runtime configuration from environment variables.
+//
+// It is a thin wrapper around config.LoadFromEnv provided so that cmd/websyncd
+// only needs to import the app package.
+//
+// Returns a populated config.Config, or an error if any required variable is
+// absent or invalid.
 func LoadConfigFromEnv() (config.Config, error) {
 	return config.LoadFromEnv()
 }
 
+// Run starts the websyncd daemon and blocks until ctx is cancelled or a shutdown
+// signal (SIGINT, SIGTERM) is received.
+//
+// cfg is a fully validated Config, typically obtained from LoadConfigFromEnv.
+// logger receives all diagnostic output; pass nil to use log.Default().
+//
+// Run acquires an exclusive lock for the given resource/output combination and
+// returns an error immediately if another instance already holds it. Once
+// running, it polls cfg.ResourceURL on cfg.PollInterval and optionally accepts
+// additional sync triggers via an HTTP webhook or Server-Sent Events stream.
+//
+// Returns nil on clean shutdown. Returns an error if the lock cannot be
+// acquired or if a fatal initialisation step fails.
 func Run(ctx context.Context, cfg config.Config, logger *log.Logger) error {
 	if logger == nil {
 		logger = log.Default()
