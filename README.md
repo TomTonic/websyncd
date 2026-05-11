@@ -11,7 +11,7 @@ websyncd is a small Go daemon that keeps a local file in sync with a remote HTTP
 - **Atomic file writes** — writes to a temporary file in the same directory, then renames it into place, so readers never see a partial file.
 - **Instance locking** — uses a PID/timestamp lock file in `$TMPDIR` (keyed by a SHA-256 of the resource URL + output path) to prevent two daemons from racing over the same file. Stale locks from crashed processes are cleared automatically after a configurable TTL.
 - **Graceful shutdown** — handles `SIGINT` / `SIGTERM` and stops all goroutines cleanly.
--- **Operational logging** — emits startup, trigger, sync success/failure, SSE/webhook lifecycle, and shutdown logs.
+- **Operational logging** — emits detailed sync diagnostics: trigger source, download decision, local replace/skip decision, protocol (`HTTP`/`HTTPS` + HTTP version), transfer rate, size delta, and freshness delta.
 - **Heartbeat endpoint** — optional `GET /healthz` endpoint for liveness monitoring (ideal for Docker `healthcheck`).
 - **Container-friendly configuration** — all settings are read from environment variables; no config files required.
 
@@ -133,6 +133,16 @@ The downloaded body is written to a temporary file (`.websyncd-*`) in the same d
 
 ### Trigger coalescing
 All sync sources (poll timer, webhook, SSE) feed into a single buffered channel of capacity 1. If multiple triggers arrive while a sync is already in progress, they collapse into a single pending re-check, preventing redundant back-to-back fetches.
+
+### Log output details
+Each sync cycle produces structured log lines that explain:
+
+- **Why sync started**: `trigger_source` (for example `startup`, `poll`, `webhook`, `sse`) and whether extra triggers were coalesced.
+- **Why download ran or was skipped**: based on HEAD/GET outcomes (`304`, matching validators, fallback from HEAD to GET, etc.).
+- **Why local file replacement ran or was skipped**: replacement is skipped when downloaded bytes are identical to the existing output (useful after restarts).
+- **Which protocol was used**: `HTTP` vs `HTTPS`, plus HTTP version (`HTTP/1.1`, `HTTP/2`, `HTTP/3`).
+- **Transfer metrics**: bytes transferred, duration, and effective throughput.
+- **Version deltas**: previous size, new size, signed size delta, and freshness delta from `Last-Modified` when available.
 
 ### Instance locking
 The lock file path is derived from a SHA-256 digest of `RESOURCE_URL + "|" + OUTPUT_PATH`. This allows multiple websyncd instances to run concurrently for different resource/output combinations on the same host, while still preventing duplicate instances for the same pair. If a lock file is found that is older than `LOCK_TTL`, it is treated as stale (the previous process likely crashed) and removed.

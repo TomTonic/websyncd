@@ -194,12 +194,12 @@ func TestAcquireRemoveFails(t *testing.T) {
 	}
 
 	// Make directory non-writable so os.Remove(path) will fail.
-	if err := os.Chmod(dir, 0o500); err != nil {
+	if err := os.Chmod(dir, 0o500); err != nil { //nolint:gosec // G302: test intentionally restricts directory perms to simulate remove failure
 		t.Fatalf("Chmod() error = %v", err)
 	}
 	// Restore permissions & cleanup afterwards.
 	defer func() {
-		_ = os.Chmod(dir, 0o700)
+		_ = os.Chmod(dir, 0o700) //nolint:gosec // G302: restoring test temp directory permissions
 		_ = os.Remove(path)
 	}()
 

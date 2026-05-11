@@ -69,7 +69,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	defer func() { _ = l.Release() }()
 	logger.Printf("lock acquired")
 
-	s := &syncer.Syncer{Client: doer, Resource: cfg.ResourceURL, OutputPath: cfg.OutputPath}
+	s := &syncer.Syncer{
+		Client:     doer,
+		Resource:   cfg.ResourceURL,
+		OutputPath: cfg.OutputPath,
+		Logf:       logger.Printf,
+	}
 	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	health := newHealthState(time.Now())
@@ -78,7 +83,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	trigger := func(source string) {
 		select {
 		case triggers <- source:
+			logger.Printf("trigger queued: source=%s", source)
 		default:
+			logger.Printf("trigger coalesced: source=%s reason=another trigger already pending", source)
 		}
 	}
 	trigger("startup")
@@ -116,10 +123,11 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 			logger.Printf("shutdown signal received")
 			return nil
 		case source := <-triggers:
-			logger.Printf("sync triggered by %s", source)
+			logger.Printf("sync starting: trigger_source=%s", source)
 			started := time.Now()
 			health.recordSyncStart(started)
-			if err := s.Sync(signalCtx); err != nil {
+			report, err := s.SyncWithReport(signalCtx)
+			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return nil
 				}
@@ -128,9 +136,103 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 				continue
 			}
 			health.recordSyncSuccess(time.Now())
-			logger.Printf("sync completed in %s", time.Since(started))
+			logSyncReport(logger, source, time.Since(started), &report)
 		}
 	}
+}
+
+func logSyncReport(logger *log.Logger, trigger string, elapsed time.Duration, report *syncer.SyncReport) {
+	if report.DownloadPerformed {
+		logger.Printf(
+			"sync download: trigger=%s decision=%q protocol=%s bytes=%s duration=%s rate=%s",
+			trigger,
+			report.DownloadDecision,
+			report.Protocol,
+			formatBytes(report.TransferBytes),
+			report.TransferDuration.Truncate(time.Millisecond),
+			formatRate(report.TransferRateBytesPerSec),
+		)
+	} else {
+		skipReason := report.DownloadSkipReason
+		if skipReason == "" {
+			skipReason = report.DownloadDecision
+		}
+		logger.Printf(
+			"sync download skipped: trigger=%s protocol=%s reason=%q",
+			trigger,
+			report.Protocol,
+			skipReason,
+		)
+	}
+
+	action := "replaced"
+	reason := "new content differs from local file"
+	if !report.LocalReplacePerformed {
+		action = "skipped"
+		if report.LocalReplaceSkipReason != "" {
+			reason = report.LocalReplaceSkipReason
+		} else if !report.DownloadPerformed {
+			reason = "no new download was required"
+		}
+	}
+
+	prevSize := "none"
+	if report.PreviousFileSize >= 0 {
+		prevSize = formatBytes(report.PreviousFileSize)
+	}
+
+	freshness := "unknown"
+	if report.FreshnessKnown {
+		switch {
+		case report.FreshnessDelta > 0:
+			freshness = report.FreshnessDelta.Truncate(time.Second).String() + " newer"
+		case report.FreshnessDelta < 0:
+			freshness = (-report.FreshnessDelta).Truncate(time.Second).String() + " older"
+		default:
+			freshness = "same age"
+		}
+	}
+
+	logger.Printf(
+		"sync file result: action=%s reason=%q previous_size=%s new_size=%s size_delta=%+s freshness=%s total_elapsed=%s",
+		action,
+		reason,
+		prevSize,
+		formatBytes(report.NewFileSize),
+		formatBytesSigned(report.SizeDeltaBytes),
+		freshness,
+		elapsed.Truncate(time.Millisecond),
+	)
+}
+
+func formatBytes(n int64) string {
+	if n < 0 {
+		return "unknown"
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+func formatBytesSigned(n int64) string {
+	if n < 0 {
+		return "-" + formatBytes(-n)
+	}
+	return "+" + formatBytes(n)
+}
+
+func formatRate(bytesPerSec float64) string {
+	if bytesPerSec <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%s/s", formatBytes(int64(bytesPerSec)))
 }
 
 func startWebhook(ctx context.Context, addr string, trigger func(string), logger *log.Logger) {
