@@ -36,6 +36,7 @@ type Syncer struct {
 	OutputPath          string
 	Logf                func(format string, args ...any)
 	ProgressLogInterval time.Duration
+	MaxDownloadBytes    int64
 
 	etag         string
 	lastModified string
@@ -255,6 +256,17 @@ func (s *Syncer) writeAtomically(body io.Reader) (writeResult, error) {
 		return result, err
 	}
 
+	// Cap the response body to detect runaway responses before disk exhaustion.
+	// We request MaxDownloadBytes+1 so that reading exactly at the limit still
+	// succeeds; the post-loop check below surfaces the error if exceeded.
+	if s.MaxDownloadBytes > 0 {
+		limit := s.MaxDownloadBytes + 1
+		if limit <= 0 { // overflow guard for MaxDownloadBytes == math.MaxInt64
+			limit = s.MaxDownloadBytes
+		}
+		body = io.LimitReader(body, limit)
+	}
+
 	tmp, err := os.CreateTemp(dir, ".websyncd-*")
 	if err != nil {
 		return result, err
@@ -319,6 +331,12 @@ func (s *Syncer) writeAtomically(body io.Reader) (writeResult, error) {
 	}
 
 	result.TransferDuration = time.Since(copyStarted)
+
+	// Detect if the server sent more data than permitted.
+	if s.MaxDownloadBytes > 0 && result.TransferredBytes > s.MaxDownloadBytes {
+		return result, fmt.Errorf("response body exceeds maximum download size %s", formatBytes(s.MaxDownloadBytes))
+	}
+
 	if syncErr := tmp.Sync(); syncErr != nil {
 		return result, syncErr
 	}

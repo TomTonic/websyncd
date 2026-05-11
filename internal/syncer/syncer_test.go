@@ -639,3 +639,51 @@ func TestSyncWithReportLogsProgressAndPartialTransferOnFailure(t *testing.T) {
 		t.Fatalf("missing failure log with transferred bytes, logs:\n%s", joined)
 	}
 }
+
+// TestWriteAtomicallyEnforcesMaxDownloadBytes verifies that the daemon rejects a
+// response body that exceeds the configured size limit, protecting against disk
+// exhaustion caused by a runaway or compromised upstream server.
+//
+// This test covers the MaxDownloadBytes enforcement in writeAtomically within
+// the syncer package.
+//
+// It sets MaxDownloadBytes to a small value, supplies a body that exceeds it,
+// and asserts that writeAtomically returns an error. A body exactly at the limit
+// must succeed.
+func TestWriteAtomicallyEnforcesMaxDownloadBytes(t *testing.T) {
+	t.Run("body exceeds limit returns error", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "out.txt")
+		s := &Syncer{OutputPath: out, MaxDownloadBytes: 4}
+		_, err := s.writeAtomically(strings.NewReader("hello!")) // 6 bytes > 4
+		if err == nil {
+			t.Fatalf("writeAtomically() succeeded, want error for oversized body")
+		}
+		if !strings.Contains(err.Error(), "maximum download size") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("body exactly at limit succeeds", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "out.txt")
+		s := &Syncer{OutputPath: out, MaxDownloadBytes: 5}
+		result, err := s.writeAtomically(strings.NewReader("hello")) // 5 bytes == 5
+		if err != nil {
+			t.Fatalf("writeAtomically() error = %v, want nil at exact limit", err)
+		}
+		if !result.Replaced {
+			t.Fatalf("writeAtomically() did not replace output")
+		}
+	})
+
+	t.Run("zero limit means unlimited", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "out.txt")
+		s := &Syncer{OutputPath: out, MaxDownloadBytes: 0}
+		result, err := s.writeAtomically(strings.NewReader("any content"))
+		if err != nil {
+			t.Fatalf("writeAtomically() error = %v, want nil when limit is 0", err)
+		}
+		if !result.Replaced {
+			t.Fatalf("writeAtomically() did not replace output")
+		}
+	})
+}
