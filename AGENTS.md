@@ -73,7 +73,7 @@ comment explaining *why* the helper exists is expected.
 
 - All new functionality must include tests.
 - Use table-driven tests where appropriate.
-- Maintain at least 80% test coverage for every module.
+- Maintain at least 80% test coverage for every package.
 - Run `go test ./... -race` before submitting changes.
 - Fuzz tests are welcome for functions that parse external input.
 
