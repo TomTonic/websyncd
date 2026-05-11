@@ -94,3 +94,106 @@ func TestAcquireRemovesStaleLock(t *testing.T) {
 	}
 	_ = l.Release()
 }
+
+// TestReleaseNil verifies Release is safe to call on a nil receiver.
+func TestReleaseNil(t *testing.T) {
+	var l *Lock
+	if err := l.Release(); err != nil {
+		t.Fatalf("Release() on nil returned error: %v", err)
+	}
+}
+
+// TestReleaseAfterManualRemove ensures Release handles the case where the
+// lock file was removed externally before Release is called (idempotency).
+func TestReleaseAfterManualRemove(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	l, err := Acquire("https://example.invalid/res", "/tmp/out", time.Minute, time.Now)
+	if err != nil {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+
+	// Remove the file ourselves and then call Release; Release should return nil.
+	if err := os.Remove(l.path); err != nil {
+		t.Fatalf("Remove(lockfile) error = %v", err)
+	}
+	if err := l.Release(); err != nil {
+		t.Fatalf("Release() after manual remove returned error: %v", err)
+	}
+}
+
+// TestIsStaleCoversMissingAndMalformedAndFresh cases for isStale.
+func TestIsStaleCoversMissingAndMalformedAndFresh(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	path := lockPath("https://example.invalid/res", "/tmp/out")
+	// Ensure missing file returns true (considered stale)
+	if !isStale(path, time.Minute, time.Now) {
+		t.Fatalf("isStale(missing file) = false, want true")
+	}
+
+	// Malformed timestamp -> stale
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte("pid=1\ntimestamp=notanint\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if !isStale(path, time.Minute, time.Now) {
+		t.Fatalf("isStale(malformed timestamp) = false, want true")
+	}
+
+	// Fresh timestamp -> not stale
+	now := time.Now()
+	ts := strconv.FormatInt(now.Unix(), 10)
+	if err := os.WriteFile(path, []byte("pid=1\ntimestamp="+ts+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if isStale(path, 5*time.Minute, func() time.Time { return now }) {
+		t.Fatalf("isStale(fresh timestamp) = true, want false")
+	}
+
+	// Old timestamp -> stale
+	old := now.Add(-10 * time.Minute)
+	tsOld := strconv.FormatInt(old.Unix(), 10)
+	if err := os.WriteFile(path, []byte("pid=1\ntimestamp="+tsOld+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if !isStale(path, 5*time.Minute, func() time.Time { return now }) {
+		t.Fatalf("isStale(old timestamp) = false, want true")
+	}
+}
+
+// TestAcquireRemoveFails simulates a failure to remove a stale lock file by
+// making the parent directory non-writable. Acquire should return ErrLocked
+// when it cannot delete the stale lock.
+func TestAcquireRemoveFails(t *testing.T) {
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "no_rm")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	t.Setenv("TMPDIR", dir)
+
+	path := lockPath("https://example.invalid/res", "/tmp/out")
+	staleTs := time.Now().Add(-10 * time.Minute).Unix()
+	if err := os.WriteFile(path, []byte("pid=1\ntimestamp="+strconv.FormatInt(staleTs, 10)+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// Make directory non-writable so os.Remove(path) will fail.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("Chmod() error = %v", err)
+	}
+	// Restore permissions & cleanup afterwards.
+	defer func() {
+		_ = os.Chmod(dir, 0o700)
+		_ = os.Remove(path)
+	}()
+
+	if _, err := Acquire("https://example.invalid/res", "/tmp/out", time.Minute, time.Now); !errors.Is(err, ErrLocked) {
+		t.Fatalf("Acquire() error = %v, want ErrLocked", err)
+	}
+}
