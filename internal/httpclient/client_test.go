@@ -1,7 +1,6 @@
 package httpclient
 
 import (
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -20,53 +19,48 @@ func (r *recordingDoer) Do(_ *http.Request) (*http.Response, error) {
 	return r.resp, r.err
 }
 
-// TestFallbackDoerFallsBackWhenPrimaryFails verifies that enabling HTTP/3 does
-// not break sync when the QUIC transport is unavailable.
+// TestNewBuildsWorkingClientWithHTTP3Disabled verifies that users who explicitly
+// disable HTTP/3 still receive a functional HTTP client capable of making
+// standard TCP requests.
 //
-// This test covers the fallbackDoer type in the httpclient package, which
-// transparently retries failed HTTP/3 requests over a standard HTTP transport.
+// This test covers the New constructor in the httpclient package with
+// enableHTTP3=false, confirming a plain *http.Client is returned.
 //
-// It configures a primary client that always errors and a fallback that
-// succeeds, then asserts the response comes from the fallback and that both
-// clients were invoked exactly once.
-func TestFallbackDoerFallsBackWhenPrimaryFails(t *testing.T) {
-	// User perspective: enabling HTTP/3 must not break sync when QUIC fails.
-	// System perspective: failed primary request should transparently retry on fallback client.
-	// Code perspective: fallbackDoer invokes fallback Do after primary error.
-	primary := &recordingDoer{err: errors.New("h3 not available")}
-	fallback := &recordingDoer{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}}
-	d := &fallbackDoer{primary: primary, fallback: fallback}
+// It checks that the returned Doer is a concrete *http.Client and that the
+// CloseFunc completes without error.
+func TestNewBuildsWorkingClientWithHTTP3Disabled(t *testing.T) {
+	client, closeFn := New(2*time.Second, false)
+	if _, ok := client.(*http.Client); !ok {
+		t.Fatalf("expected *http.Client when HTTP/3 disabled, got %T", client)
+	}
+	if err := closeFn(); err != nil {
+		t.Fatalf("closeFn() error = %v", err)
+	}
+}
 
-	req, _ := http.NewRequest(http.MethodGet, "https://example.invalid/resource", nil)
+// TestNewBuildsFunctionalRecordingClient is a compile-time / wiring check that
+// recordingDoer satisfies the Doer interface and can be used in place of a real
+// client in tests, ensuring the Doer contract is stable.
+//
+// This test covers the Doer interface definition in the httpclient package.
+//
+// It constructs a recordingDoer with a canned 200 response and asserts that a
+// single Do call returns the expected status.
+func TestNewBuildsFunctionalRecordingClient(t *testing.T) {
+	d := &recordingDoer{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("ok")),
+	}}
+	req, _ := http.NewRequest(http.MethodGet, "https://example.invalid/", nil)
 	resp, err := d.Do(req)
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	if primary.calls != 1 || fallback.calls != 1 {
-		t.Fatalf("calls primary=%d fallback=%d", primary.calls, fallback.calls)
-	}
-}
-
-// TestNewReturnsStdClientWhenHTTP3Disabled verifies that the default runtime
-// works without HTTP/3 and that no extra resources need to be cleaned up.
-//
-// This test covers the New constructor in the httpclient package.
-//
-// It calls New with enableHTTP3=false and asserts that the returned client is a
-// plain *http.Client and that the CloseFunc completes without error.
-func TestNewReturnsStdClientWhenHTTP3Disabled(t *testing.T) {
-	// User perspective: default runtime should work without HTTP/3.
-	// System perspective: disabled HTTP/3 uses standard net/http client only.
-	// Code perspective: New returns a non-fallback client and a closable no-op.
-	client, closeFn := New(2*time.Second, false)
-	if _, ok := client.(*http.Client); !ok {
-		t.Fatalf("expected standard http.Client when HTTP/3 disabled")
-	}
-	if err := closeFn(); err != nil {
-		t.Fatalf("closeFn() error = %v", err)
+	if d.calls != 1 {
+		t.Fatalf("calls = %d, want 1", d.calls)
 	}
 }

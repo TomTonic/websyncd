@@ -1,9 +1,8 @@
-// Package httpclient provides an HTTP client factory with optional HTTP/3 support
-// and automatic fallback to HTTP/1.1 or HTTP/2.
+// Package httpclient provides an HTTP client factory with optional HTTP/3
+// support via Alt-Svc-based auto-upgrade.
 package httpclient
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -24,9 +23,15 @@ type CloseFunc func() error
 
 // New constructs an HTTP client suitable for the given configuration.
 //
-// timeout is applied to every individual request. enableHTTP3, when true,
-// wraps the client with an HTTP/3 (QUIC) transport that automatically falls
-// back to HTTP/1.1 or HTTP/2 if QUIC fails.
+// timeout is applied to every individual request. enableHTTP3, when true
+// (the default), wraps the standard transport with an Alt-Svc-aware
+// RoundTripper: the first request to an origin uses TCP; if the response
+// carries an Alt-Svc header advertising h3 the origin is promoted to HTTP/3
+// for subsequent requests. A per-origin cooldown prevents repeated QUIC
+// attempts when UDP is blocked.
+//
+// When enableHTTP3 is false a plain *http.Client is returned without any
+// HTTP/3 capability.
 //
 // Returns a Doer for making requests and a CloseFunc that must be called on
 // shutdown to release transport resources. The CloseFunc is safe to call
@@ -37,39 +42,22 @@ type CloseFunc func() error
 //	client, closeClient := httpclient.New(cfg.HTTPTimeout, cfg.EnableHTTP3)
 //	defer closeClient()
 func New(timeout time.Duration, enableHTTP3 bool) (Doer, CloseFunc) {
-	fallback := &http.Client{Timeout: timeout}
+	tcpTransport := http.DefaultTransport
+	tcpClient := &http.Client{Timeout: timeout}
+
 	if !enableHTTP3 {
-		return fallback, func() error { return nil }
+		return tcpClient, func() error { return nil }
 	}
 
 	h3Transport := &http3.Transport{}
-	h3Client := &http.Client{
+	transport := &altSvcTransport{
+		tcp:   tcpTransport,
+		h3:    h3Transport,
+		cache: newAltSvcCache(),
+	}
+	client := &http.Client{
 		Timeout:   timeout,
-		Transport: h3Transport,
+		Transport: transport,
 	}
-
-	return &fallbackDoer{primary: h3Client, fallback: fallback}, h3Transport.Close
-}
-
-type fallbackDoer struct {
-	primary  Doer
-	fallback Doer
-}
-
-func (f *fallbackDoer) Do(req *http.Request) (*http.Response, error) {
-	resp, err := f.primary.Do(req)
-	if err == nil {
-		return resp, nil
-	}
-
-	if req.Body != nil {
-		return nil, err
-	}
-
-	cloned := req.Clone(req.Context())
-	fallbackResp, fallbackErr := f.fallback.Do(cloned)
-	if fallbackErr != nil {
-		return nil, errors.Join(err, fallbackErr)
-	}
-	return fallbackResp, nil
+	return client, h3Transport.Close
 }
