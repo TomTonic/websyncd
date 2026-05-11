@@ -50,8 +50,11 @@ func TestLoadFromEnvHeartbeatOverrides(t *testing.T) {
 	}
 }
 
-// TestEnvHelpers ensures env helper functions behave correctly for common
-// valid and invalid inputs.
+// TestEnvHelpers verifies env helper functions behave correctly for common inputs.
+//
+// This test covers the small helper functions used by LoadFromEnv: `envString`,
+// `envDuration` and `envBool`. It asserts fallback behavior, correct parsing of
+// durations (including invalid and negative values) and boolean parsing rules.
 func TestEnvHelpers(t *testing.T) {
 	t.Run("envString fallback", func(t *testing.T) {
 		t.Setenv("FOO_BAR", "")
