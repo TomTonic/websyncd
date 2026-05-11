@@ -27,6 +27,10 @@ type Config struct {
 	HeartbeatAddr            string
 	DownloadProgressInterval time.Duration
 	MaxDownloadBytes         int64
+	OutputFileAttributesSet  bool
+	OutputFileMode           os.FileMode
+	OutputFileUID            int
+	OutputFileGID            int
 }
 
 // LoadFromEnv constructs a Config by reading well-known environment variables.
@@ -56,6 +60,18 @@ func LoadFromEnv() (Config, error) {
 		HeartbeatAddr:            envString("HEARTBEAT_ADDR", ""),
 		DownloadProgressInterval: envDuration("DOWNLOAD_PROGRESS_INTERVAL", 5*time.Second),
 		MaxDownloadBytes:         envInt64("MAX_DOWNLOAD_BYTES", 0),
+		OutputFileMode:           0o644,
+	}
+
+	if attrsRaw := strings.TrimSpace(os.Getenv("OUTPUT_FILE_ATTRIBUTES")); attrsRaw != "" {
+		uid, gid, mode, parseErr := parseOutputFileAttributes(attrsRaw)
+		if parseErr != nil {
+			return Config{}, parseErr
+		}
+		cfg.OutputFileAttributesSet = true
+		cfg.OutputFileUID = uid
+		cfg.OutputFileGID = gid
+		cfg.OutputFileMode = mode
 	}
 
 	if cfg.ResourceURL == "" {
@@ -132,6 +148,35 @@ func envEnableHTTP3() bool {
 		return true
 	}
 	return b
+}
+
+// parseOutputFileAttributes parses OUTPUT_FILE_ATTRIBUTES in the format
+// "uid:gid:mode", where mode is an octal permission value like 0644.
+func parseOutputFileAttributes(v string) (uid int, gid int, mode os.FileMode, err error) {
+	parts := strings.Split(v, ":")
+	if len(parts) != 3 {
+		return 0, 0, 0, fmt.Errorf("OUTPUT_FILE_ATTRIBUTES must be in format uid:gid:mode")
+	}
+
+	uid, err = strconv.Atoi(parts[0])
+	if err != nil || uid < 0 {
+		return 0, 0, 0, fmt.Errorf("OUTPUT_FILE_ATTRIBUTES: invalid uid %q", parts[0])
+	}
+
+	gid, err = strconv.Atoi(parts[1])
+	if err != nil || gid < 0 {
+		return 0, 0, 0, fmt.Errorf("OUTPUT_FILE_ATTRIBUTES: invalid gid %q", parts[1])
+	}
+
+	parsedMode, err := strconv.ParseUint(parts[2], 8, 32)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("OUTPUT_FILE_ATTRIBUTES: invalid mode %q", parts[2])
+	}
+	if parsedMode > 0o7777 {
+		return 0, 0, 0, fmt.Errorf("OUTPUT_FILE_ATTRIBUTES: mode %q out of range", parts[2])
+	}
+
+	return uid, gid, os.FileMode(parsedMode), nil
 }
 
 // validateURL ensures the provided string is an absolute HTTP(S) URL with a host.

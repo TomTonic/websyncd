@@ -258,3 +258,73 @@ func TestLoadFromEnvSuccess(t *testing.T) {
 		t.Fatalf("WebhookAddr = %q, want %q", cfg.WebhookAddr, "localhost:8080")
 	}
 }
+
+// TestParseOutputFileAttributes verifies that OUTPUT_FILE_ATTRIBUTES parsing
+// accepts valid uid:gid:mode values and rejects malformed input.
+//
+// This test covers the configuration boundary for file-attribute overrides.
+//
+// It checks valid parsing plus representative invalid formats and values.
+func TestParseOutputFileAttributes(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		uid, gid, mode, err := parseOutputFileAttributes("1000:100:0640")
+		if err != nil {
+			t.Fatalf("parseOutputFileAttributes() error = %v", err)
+		}
+		if uid != 1000 || gid != 100 || mode != 0o640 {
+			t.Fatalf("parsed values = (%d,%d,%#o), want (1000,100,0640)", uid, gid, mode)
+		}
+	})
+
+	invalid := []string{
+		"",
+		"1000:100",
+		"u:g:0644",
+		"-1:100:0644",
+		"1000:-1:0644",
+		"1000:100:not-octal",
+		"1000:100:177777",
+	}
+	for _, in := range invalid {
+		t.Run("invalid_"+strings.ReplaceAll(in, ":", "_"), func(t *testing.T) {
+			if _, _, _, err := parseOutputFileAttributes(in); err == nil {
+				t.Fatalf("parseOutputFileAttributes(%q) succeeded, want error", in)
+			}
+		})
+	}
+}
+
+// TestLoadFromEnvOutputFileAttributes verifies that OUTPUT_FILE_ATTRIBUTES is
+// parsed into Config fields and invalid values fail fast.
+//
+// This test covers end-user configuration behavior in LoadFromEnv.
+//
+// It sets valid and invalid environment values and asserts expected outcomes.
+func TestLoadFromEnvOutputFileAttributes(t *testing.T) {
+	t.Run("valid attributes", func(t *testing.T) {
+		t.Setenv("RESOURCE_URL", "https://example.invalid/data")
+		t.Setenv("OUTPUT_PATH", "/tmp/data.txt")
+		t.Setenv("OUTPUT_FILE_ATTRIBUTES", "1000:100:0644")
+
+		cfg, err := LoadFromEnv()
+		if err != nil {
+			t.Fatalf("LoadFromEnv() error = %v", err)
+		}
+		if !cfg.OutputFileAttributesSet {
+			t.Fatalf("OutputFileAttributesSet = false, want true")
+		}
+		if cfg.OutputFileUID != 1000 || cfg.OutputFileGID != 100 || cfg.OutputFileMode != 0o644 {
+			t.Fatalf("unexpected output attrs: uid=%d gid=%d mode=%#o", cfg.OutputFileUID, cfg.OutputFileGID, cfg.OutputFileMode)
+		}
+	})
+
+	t.Run("invalid attributes", func(t *testing.T) {
+		t.Setenv("RESOURCE_URL", "https://example.invalid/data")
+		t.Setenv("OUTPUT_PATH", "/tmp/data.txt")
+		t.Setenv("OUTPUT_FILE_ATTRIBUTES", "broken")
+
+		if _, err := LoadFromEnv(); err == nil {
+			t.Fatalf("LoadFromEnv() succeeded with invalid OUTPUT_FILE_ATTRIBUTES")
+		}
+	})
+}
