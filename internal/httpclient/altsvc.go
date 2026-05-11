@@ -14,6 +14,12 @@ const (
 	// altSvcH3Cooldown is the period after a failed HTTP/3 attempt during which
 	// the origin is not retried over QUIC, so UDP-blocked networks are not punished.
 	altSvcH3Cooldown = 7 * time.Minute
+	// altSvcMaxMaSecs is the maximum accepted value for the Alt-Svc ma= parameter.
+	// Values above this are clamped to prevent time.Duration overflow when the
+	// seconds value is multiplied by time.Second (1e9 ns): any secs > MaxInt64/1e9
+	// would wrap to a negative duration and make cache entries expire immediately.
+	// 7 days is a generous upper bound; the spec does not define a maximum.
+	altSvcMaxMaSecs = int64(7 * 24 * time.Hour / time.Second) // 604800
 )
 
 // h3Entry describes a cached HTTP/3 advertisement for a single origin.
@@ -142,6 +148,9 @@ func parseAltSvc(headerVal string) (string, time.Duration, bool) {
 			param = strings.TrimSpace(param)
 			if strings.HasPrefix(param, "ma=") {
 				if secs, err := strconv.ParseInt(strings.TrimPrefix(param, "ma="), 10, 64); err == nil && secs > 0 {
+					if secs > altSvcMaxMaSecs {
+						secs = altSvcMaxMaSecs
+					}
 					maxAge = time.Duration(secs) * time.Second
 				}
 			}
