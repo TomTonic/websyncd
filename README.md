@@ -6,7 +6,7 @@ websyncd is a small Go daemon that keeps a local file in sync with a remote HTTP
 
 - **Bandwidth-efficient polling** — issues a `HEAD` request first; only fetches the full body with `GET` when the resource has actually changed (using `ETag` / `Last-Modified` conditional headers).
 - **Webhook trigger** — listens for `POST /` on a configurable address so external systems can push an immediate sync without waiting for the next poll tick.
-- **SSE trigger** — connects to a Server-Sent Events endpoint and triggers a sync on every event, with automatic reconnection on failure.
+-- **Resource event stream (SSE) trigger** — connects to a Server-Sent Events endpoint and triggers a sync on every event, with automatic reconnection on failure.
 - **HTTP/3 (QUIC) support** — optionally uses HTTP/3 with transparent fallback to HTTP/1.1+HTTP/2 for bodyless requests (HEAD) if the server does not support QUIC.
 - **Atomic file writes** — writes to a temporary file in the same directory, then renames it into place, so readers never see a partial file.
 - **Instance locking** — uses a PID/timestamp lock file in `$TMPDIR` (keyed by a SHA-256 of the resource URL + output path) to prevent two daemons from racing over the same file. Stale locks from crashed processes are cleared automatically after a configurable TTL.
@@ -85,8 +85,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `HTTP_TIMEOUT`   | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`       | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
 | `WEBHOOK_ADDR`   | no       | `—`      | If set, start an HTTP webhook server that accepts `POST /` to trigger an immediate sync (e.g. `127.0.0.1:8080`). |
-| `ENABLE_SSE`     | no       | `false`  | When `true`, connect to `SSE_URL` and trigger a sync on each event. |
-| `SSE_URL`        | cond.    | —        | Required when `ENABLE_SSE=true`. URL of the SSE stream. |
+| `RESOURCE_EVENT_URL` | no   | `—`      | If set, connect to this Server-Sent Events (SSE) stream and trigger a sync on each event. |
 | `ENABLE_HTTP3`   | no       | `false`  | When `true`, use HTTP/3 (QUIC) as the primary transport with automatic fallback. |
 | `HEARTBEAT_ADDR` | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081`). |
 
@@ -108,8 +107,7 @@ Use SSE for push-driven updates with a 5-minute polling fallback:
 RESOURCE_URL=https://api.example.com/data.json \
 OUTPUT_PATH=/tmp/data.json \
 POLL_INTERVAL=5m \
-ENABLE_SSE=true \
-SSE_URL=https://api.example.com/events \
+RESOURCE_EVENT_URL=https://api.example.com/events \
 ./websyncd
 ```
 
