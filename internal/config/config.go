@@ -16,15 +16,16 @@ import (
 // variables via LoadFromEnv. All fields are read-only after construction; do not
 // mutate a Config that has been passed to app.Run.
 type Config struct {
-	ResourceURL      string
-	OutputPath       string
-	PollInterval     time.Duration
-	HTTPTimeout      time.Duration
-	LockTTL          time.Duration
-	WebhookAddr      string
-	ResourceEventURL string
-	EnableHTTP3      bool
-	HeartbeatAddr    string
+	ResourceURL              string
+	OutputPath               string
+	PollInterval             time.Duration
+	HTTPTimeout              time.Duration
+	LockTTL                  time.Duration
+	WebhookAddr              string
+	ResourceEventURL         string
+	EnableHTTP3              bool
+	HeartbeatAddr            string
+	DownloadProgressInterval time.Duration
 }
 
 // LoadFromEnv constructs a Config by reading well-known environment variables.
@@ -40,15 +41,16 @@ type Config struct {
 // recommended entry point from main.
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
-		ResourceURL:      os.Getenv("RESOURCE_URL"),
-		OutputPath:       os.Getenv("OUTPUT_PATH"),
-		PollInterval:     envDuration("POLL_INTERVAL", 30*time.Minute),
-		HTTPTimeout:      envDuration("HTTP_TIMEOUT", 30*time.Second),
-		LockTTL:          envDuration("LOCK_TTL", 5*time.Minute),
-		WebhookAddr:      envString("WEBHOOK_ADDR", ""),
-		ResourceEventURL: envString("RESOURCE_EVENT_URL", ""),
-		EnableHTTP3:      envEnableHTTP3(),
-		HeartbeatAddr:    envString("HEARTBEAT_ADDR", ""),
+		ResourceURL:              os.Getenv("RESOURCE_URL"),
+		OutputPath:               os.Getenv("OUTPUT_PATH"),
+		PollInterval:             envDuration("POLL_INTERVAL", 30*time.Minute),
+		HTTPTimeout:              envDuration("HTTP_TIMEOUT", 30*time.Second),
+		LockTTL:                  envDuration("LOCK_TTL", 5*time.Minute),
+		WebhookAddr:              envString("WEBHOOK_ADDR", ""),
+		ResourceEventURL:         envString("RESOURCE_EVENT_URL", ""),
+		EnableHTTP3:              envEnableHTTP3(),
+		HeartbeatAddr:            envString("HEARTBEAT_ADDR", ""),
+		DownloadProgressInterval: envDuration("DOWNLOAD_PROGRESS_INTERVAL", 5*time.Second),
 	}
 
 	if cfg.ResourceURL == "" {
