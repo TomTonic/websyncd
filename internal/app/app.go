@@ -18,6 +18,10 @@ import (
 	"github.com/TomTonic/websyncd/internal/syncer"
 )
 
+type reportSyncer interface {
+	SyncWithReport(ctx context.Context) (syncer.SyncReport, error)
+}
+
 // LoadConfigFromEnv reads the runtime configuration from environment variables.
 //
 // It is a thin wrapper around config.LoadFromEnv provided so that cmd/websyncd
@@ -78,30 +82,12 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	health := newHealthState(time.Now())
 
 	triggers := make(chan string, 1)
-	trigger := func(source string) {
-		select {
-		case triggers <- source:
-			logger.Printf("trigger queued: source=%s", source)
-		default:
-			logger.Printf("trigger coalesced: source=%s reason=another trigger already pending", source)
-		}
-	}
+	trigger := makeTriggerSender(triggers, logger)
 	trigger("startup")
 
 	pollTicker := time.NewTicker(cfg.PollInterval)
 	defer pollTicker.Stop()
-
-	go func() {
-		for {
-			select {
-			case <-signalCtx.Done():
-				return
-			case <-pollTicker.C:
-				trigger("poll")
-			}
-		}
-	}()
-	// heartbeat log messages removed; only heartbeat endpoint (if enabled)
+	go startPollTrigger(signalCtx, pollTicker.C, trigger)
 
 	// Start webhook server only when WEBHOOK_ADDR is explicitly set.
 	if cfg.WebhookAddr != "" {
@@ -115,28 +101,75 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 		go startHeartbeat(signalCtx, cfg.HeartbeatAddr, health, logger)
 	}
 
-	for {
+	runSyncLoop(signalCtx, triggers, s, health, logger)
+	return nil
+}
+
+// makeTriggerSender builds a coalescing trigger sender for sync events.
+func makeTriggerSender(triggers chan<- string, logger *log.Logger) func(string) {
+	return func(source string) {
 		select {
-		case <-signalCtx.Done():
-			logger.Printf("shutdown signal received")
-			return nil
-		case source := <-triggers:
-			logger.Printf("sync starting: trigger_source=%s", source)
-			started := time.Now()
-			health.recordSyncStart(started)
-			report, err := s.SyncWithReport(signalCtx)
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return nil
-				}
-				logger.Printf("sync failed after %s: %v", time.Since(started), err)
-				health.recordSyncFailure(time.Now(), err)
-				continue
-			}
-			health.recordSyncSuccess(time.Now())
-			logSyncReport(logger, source, time.Since(started), &report)
+		case triggers <- source:
+			logger.Printf("trigger queued: source=%s", source)
+		default:
+			logger.Printf("trigger coalesced: source=%s reason=another trigger already pending", source)
 		}
 	}
+}
+
+// startPollTrigger emits periodic poll triggers until the context is cancelled.
+func startPollTrigger(ctx context.Context, ticks <-chan time.Time, trigger func(string)) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			trigger("poll")
+		}
+	}
+}
+
+// runSyncLoop processes incoming trigger events until shutdown.
+func runSyncLoop(ctx context.Context, triggers <-chan string, s reportSyncer, health *healthState, logger *log.Logger) {
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Printf("shutdown signal received")
+			return
+		case source := <-triggers:
+			if handleTrigger(ctx, s, health, logger, source) {
+				return
+			}
+		}
+	}
+}
+
+// handleTrigger processes a sync trigger by executing a sync operation and
+// recording results in the health state. It runs synchronously to completion
+// and logs diagnostic information via the logger.
+//
+// ctx is the context that should be passed to SyncWithReport; if cancelled
+// during sync, this function returns early after reporting cancellation.
+//
+// source is the trigger source for logging (e.g., "webhook", "poll").
+// Returns true if the sync succeeded or was cancelled (caller should exit);
+// returns false if a recoverable error occurred and processing should continue.
+func handleTrigger(ctx context.Context, s reportSyncer, health *healthState, logger *log.Logger, source string) bool {
+	logger.Printf("sync starting: trigger_source=%s", source)
+	started := time.Now()
+	health.recordSyncStart(started)
+	report, err := s.SyncWithReport(ctx)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return true // caller should exit
+		}
+		logger.Printf("sync failed after %s: %v", time.Since(started), err)
+		health.recordSyncFailure(time.Now(), err)
+		return false // recoverable error
+	}
+	health.recordSyncSuccess(time.Now())
+	logSyncReport(logger, source, time.Since(started), &report)
+	return false // continue processing
 }
 
 // healthState tracks sync execution metrics for operational health checks.
