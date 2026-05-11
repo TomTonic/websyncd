@@ -100,6 +100,29 @@ func TestEnvHelpers(t *testing.T) {
 			t.Fatalf("envBool returned false for empty value, want default true")
 		}
 	})
+
+	t.Run("envInt64 parsing and fallback", func(t *testing.T) {
+		t.Setenv("MAX_DOWNLOAD_BYTES", "1048576")
+		if v := envInt64("MAX_DOWNLOAD_BYTES", 0); v != 1048576 {
+			t.Fatalf("envInt64 returned %d, want 1048576", v)
+		}
+		t.Setenv("MAX_DOWNLOAD_BYTES", "0")
+		if v := envInt64("MAX_DOWNLOAD_BYTES", 99); v != 0 {
+			t.Fatalf("envInt64 returned %d, want 0", v)
+		}
+		t.Setenv("MAX_DOWNLOAD_BYTES", "-1")
+		if v := envInt64("MAX_DOWNLOAD_BYTES", 42); v != 42 {
+			t.Fatalf("envInt64 returned %d, want fallback 42 for negative value", v)
+		}
+		t.Setenv("MAX_DOWNLOAD_BYTES", "not-a-number")
+		if v := envInt64("MAX_DOWNLOAD_BYTES", 42); v != 42 {
+			t.Fatalf("envInt64 returned %d, want fallback 42 for non-numeric value", v)
+		}
+		t.Setenv("MAX_DOWNLOAD_BYTES", "")
+		if v := envInt64("MAX_DOWNLOAD_BYTES", 42); v != 42 {
+			t.Fatalf("envInt64 returned %d, want fallback 42 for empty value", v)
+		}
+	})
 }
 
 // TestValidateURLAndAddr exercises URL and address validation logic including

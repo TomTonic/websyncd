@@ -26,6 +26,7 @@ type Config struct {
 	EnableHTTP3              bool
 	HeartbeatAddr            string
 	DownloadProgressInterval time.Duration
+	MaxDownloadBytes         int64
 }
 
 // LoadFromEnv constructs a Config by reading well-known environment variables.
@@ -54,6 +55,7 @@ func LoadFromEnv() (Config, error) {
 		EnableHTTP3:              envEnableHTTP3(),
 		HeartbeatAddr:            envString("HEARTBEAT_ADDR", ""),
 		DownloadProgressInterval: envDuration("DOWNLOAD_PROGRESS_INTERVAL", 5*time.Second),
+		MaxDownloadBytes:         envInt64("MAX_DOWNLOAD_BYTES", 0),
 	}
 
 	if cfg.ResourceURL == "" {
@@ -102,6 +104,20 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// envInt64 parses name as a non-negative integer. Returns fallback when the
+// variable is absent, non-numeric, or negative.
+func envInt64(name string, fallback int64) int64 { //nolint:unparam // name is a generic parameter; additional callers may be added later
+	v := os.Getenv(name)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return fallback
+	}
+	return n
 }
 
 // envEnableHTTP3 returns true by default (HTTP/3 Auto-Upgrade is enabled unless

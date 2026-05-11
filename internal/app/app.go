@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -75,6 +76,7 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 		OutputPath:          cfg.OutputPath,
 		Logf:                logger.Printf,
 		ProgressLogInterval: cfg.DownloadProgressInterval,
+		MaxDownloadBytes:    cfg.MaxDownloadBytes,
 	}
 	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -249,7 +251,13 @@ func startWebhook(ctx context.Context, addr string, trigger func(string), logger
 		w.WriteHeader(http.StatusAccepted)
 	})
 
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      5 * time.Second,
+	}
 	go func() { //nolint:gosec // G118: shutdown timeout must be independent of the cancelled parent context
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -310,7 +318,13 @@ func startSSE(ctx context.Context, doer httpclient.Doer, url string, trigger fun
 }
 
 func startHeartbeat(ctx context.Context, addr string, state *healthState, logger *log.Logger) {
-	srv := &http.Server{Addr: addr, Handler: heartbeatHandler(state), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           heartbeatHandler(state),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      5 * time.Second,
+	}
 	go func() { //nolint:gosec // G118: shutdown timeout must be independent of the cancelled parent context
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -343,7 +357,10 @@ func heartbeatHandler(state *healthState) http.Handler {
 		_, _ = io.WriteString(w, "last_success_age="+formatAge(s.LastSuccessAt, s.Now)+"\n")
 		_, _ = io.WriteString(w, "last_failure_age="+formatAge(s.LastFailureAt, s.Now)+"\n")
 		if s.LastError != "" {
-			_, _ = io.WriteString(w, "last_error="+s.LastError+"\n")
+			// Sanitise the error string: server-controlled content may contain
+			// newlines that would inject fake key=value lines into the response.
+			safeErr := strings.NewReplacer("\n", " ", "\r", " ").Replace(s.LastError)
+			_, _ = io.WriteString(w, "last_error="+safeErr+"\n")
 		}
 	})
 	return mux
