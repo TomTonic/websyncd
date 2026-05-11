@@ -82,7 +82,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 |------------------|----------|----------|-------------|
 | `RESOURCE_URL`   | yes      | —        | URL of the remote resource to sync. |
 | `OUTPUT_PATH`    | yes      | —        | Local file path to write the resource to. Parent directories are created automatically. |
-| `POLL_INTERVAL`  | no       | `1m`     | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
+| `POLL_INTERVAL`  | no       | `30m`    | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `HTTP_TIMEOUT`   | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`       | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
 | `HEARTBEAT_INTERVAL` | no    | `5m`     | Interval for periodic “still alive” heartbeat log messages. |
