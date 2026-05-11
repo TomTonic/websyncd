@@ -66,6 +66,9 @@ func TestParseAltSvc(t *testing.T) {
 		{"h3 missing port", `h3=":"; ma=60`, false, "", 0},
 		{"h3 zero port", `h3=":0"; ma=60`, false, "", 0},
 		{"empty header", ``, false, "", 0},
+		// Overflow guard: ma= values larger than altSvcMaxMaSecs must be clamped,
+		// not converted to a negative duration (time.Duration overflow).
+		{"ma overflow clamped to max", `h3=":443"; ma=9999999999999`, true, "443", time.Duration(altSvcMaxMaSecs) * time.Second},
 	}
 
 	for _, tc := range cases {
