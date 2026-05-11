@@ -45,6 +45,7 @@ Run a single sync service:
 docker run --rm \
   -e RESOURCE_URL=https://example.com/data.json \
   -e OUTPUT_PATH=/data/data.json \
+  -e MAX_DOWNLOAD_BYTES=10485760 \
   -e HEARTBEAT_ADDR=:8081 \
   -v "$(pwd)/data:/data" \
   ghcr.io/tomtonic/websyncd:latest
@@ -89,6 +90,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `LOCK_TTL`           | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
 | `ENABLE_HTTP3`       | no       | `true`   | Set to `false` to disable HTTP/3 Auto-Upgrade entirely (useful when QUIC is blocked or causes problems). When `true` (default), the first request to an origin uses TCP; if the server's `Alt-Svc` response header advertises `h3`, subsequent requests use HTTP/3 (QUIC) automatically. A per-origin cooldown of ~7 minutes prevents repeated QUIC retries after a failure. |
 | `DOWNLOAD_PROGRESS_INTERVAL` | no | `5s` | How often to emit progress log messages during long-running downloads (Go duration string, e.g. `5s`, `1m`, `500ms`). |
+| `MAX_DOWNLOAD_BYTES` | no       | `0`      | Maximum allowed size for a downloaded response body in bytes (non-negative integer). Use a value >0 to protect against runaway responses; `0` means no limit. |
 
 ### Examples
 
