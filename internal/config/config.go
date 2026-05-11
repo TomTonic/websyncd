@@ -13,19 +13,18 @@ import (
 // variables via LoadFromEnv. All fields are read-only after construction; do not
 // mutate a Config that has been passed to app.Run.
 type Config struct {
-	ResourceURL       string
-	OutputPath        string
-	PollInterval      time.Duration
-	HTTPTimeout       time.Duration
-	LockTTL           time.Duration
-	HeartbeatInterval time.Duration
-	EnableWebhook     bool
-	WebhookAddr       string
-	EnableSSE         bool
-	SSEURL            string
-	EnableHTTP3       bool
-	EnableHeartbeat   bool
-	HeartbeatAddr     string
+	ResourceURL     string
+	OutputPath      string
+	PollInterval    time.Duration
+	HTTPTimeout     time.Duration
+	LockTTL         time.Duration
+	EnableWebhook   bool
+	WebhookAddr     string
+	EnableSSE       bool
+	SSEURL          string
+	EnableHTTP3     bool
+	EnableHeartbeat bool
+	HeartbeatAddr   string
 }
 
 // LoadFromEnv constructs a Config by reading well-known environment variables.
@@ -41,19 +40,18 @@ type Config struct {
 // recommended entry point from main.
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
-		ResourceURL:       os.Getenv("RESOURCE_URL"),
-		OutputPath:        os.Getenv("OUTPUT_PATH"),
-		PollInterval:      envDuration("POLL_INTERVAL", 30*time.Minute),
-		HTTPTimeout:       envDuration("HTTP_TIMEOUT", 30*time.Second),
-		LockTTL:           envDuration("LOCK_TTL", 5*time.Minute),
-		HeartbeatInterval: envDuration("HEARTBEAT_INTERVAL", 5*time.Minute),
-		EnableWebhook:     envBool("ENABLE_WEBHOOK"),
-		WebhookAddr:       envString("WEBHOOK_ADDR", ":8080"),
-		EnableSSE:         envBool("ENABLE_SSE"),
-		SSEURL:            os.Getenv("SSE_URL"),
-		EnableHTTP3:       envBool("ENABLE_HTTP3"),
-		EnableHeartbeat:   envBool("ENABLE_HEARTBEAT"),
-		HeartbeatAddr:     envString("HEARTBEAT_ADDR", ":8081"),
+		ResourceURL:     os.Getenv("RESOURCE_URL"),
+		OutputPath:      os.Getenv("OUTPUT_PATH"),
+		PollInterval:    envDuration("POLL_INTERVAL", 30*time.Minute),
+		HTTPTimeout:     envDuration("HTTP_TIMEOUT", 30*time.Second),
+		LockTTL:         envDuration("LOCK_TTL", 5*time.Minute),
+		EnableWebhook:   envBool("ENABLE_WEBHOOK"),
+		WebhookAddr:     envString("WEBHOOK_ADDR", ":8080"),
+		EnableSSE:       envBool("ENABLE_SSE"),
+		SSEURL:          os.Getenv("SSE_URL"),
+		EnableHTTP3:     envBool("ENABLE_HTTP3"),
+		EnableHeartbeat: envBool("ENABLE_HEARTBEAT"),
+		HeartbeatAddr:   envString("HEARTBEAT_ADDR", ":8081"),
 	}
 
 	if cfg.ResourceURL == "" {
