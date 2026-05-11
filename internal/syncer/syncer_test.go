@@ -13,6 +13,203 @@ import (
 	"time"
 )
 
+type stubDoer struct {
+	fn func(*http.Request) (*http.Response, error)
+}
+
+func (s *stubDoer) Do(req *http.Request) (*http.Response, error) {
+	return s.fn(req)
+}
+
+func makeResp(code int, headers map[string]string, body string) *http.Response {
+	r := &http.Response{
+		StatusCode: code,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Status:     http.StatusText(code),
+	}
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	return r
+}
+
+// TestSync_ClientRequired verifies Sync returns an error when no HTTP client is configured.
+//
+// This test covers the Sync precondition that requires a non-nil HTTP client.
+// It constructs a Syncer with a nil Client and asserts Sync returns an error.
+func TestSync_ClientRequired(t *testing.T) {
+	s := &Syncer{Client: nil, Resource: "https://example.invalid/res", OutputPath: filepath.Join(t.TempDir(), "out")}
+	if err := s.Sync(context.Background()); err == nil {
+		t.Fatalf("Sync() succeeded without client, want error")
+	}
+}
+
+// TestHeadBehaviors exercises head response handling across common server responses.
+//
+// This test covers the head() decision logic for 405/304/2xx/4xx responses and cache validator matching.
+// It asserts that the returned needGET boolean matches the expected behavior for each case.
+func TestHeadBehaviors(t *testing.T) {
+	cases := []struct {
+		name     string
+		code     int
+		hdrs     map[string]string
+		setETag  string
+		setLM    string
+		wantNeed bool
+	}{
+		{"methodNotAllowed", http.StatusMethodNotAllowed, nil, "", "", true},
+		{"notModified", http.StatusNotModified, nil, "", "", false},
+		{"badStatus", http.StatusBadRequest, nil, "", "", true},
+		{"etagMatch", http.StatusOK, map[string]string{"ETag": "a1"}, "a1", "", false},
+		{"lastModifiedMatch", http.StatusOK, map[string]string{"Last-Modified": "tm"}, "", "tm", false},
+		{"noMatch", http.StatusOK, map[string]string{"ETag": "x", "Last-Modified": "y"}, "a", "b", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Syncer{
+				Client: &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+					return makeResp(tc.code, tc.hdrs, ""), nil
+				}},
+				Resource: filepath.Join(t.TempDir(), "unused"),
+			}
+			s.etag = tc.setETag
+			s.lastModified = tc.setLM
+			resp, need, err := s.head(context.Background())
+			if err != nil {
+				t.Fatalf("head() error = %v", err)
+			}
+			if need != tc.wantNeed {
+				t.Fatalf("head() need = %v, want %v (resp=%v)", need, tc.wantNeed, resp)
+			}
+		})
+	}
+
+	t.Run("do error", func(t *testing.T) {
+		s := &Syncer{Client: &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network")
+		}}, Resource: "https://x"}
+		if _, _, err := s.head(context.Background()); err == nil {
+			t.Fatalf("head() succeeded when Do returned error")
+		}
+	})
+}
+
+// TestWriteAtomically verifies atomic writes create the target file and handle directory permission errors.
+//
+// This test covers writeAtomically success path (create in nested directory and write contents)
+// and failure when the target directory is not writable.
+func TestWriteAtomically(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		tmp := t.TempDir()
+		out := filepath.Join(tmp, "sub", "out.txt")
+		s := &Syncer{OutputPath: out}
+		if err := s.writeAtomically(io.NopCloser(strings.NewReader("hello"))); err != nil {
+			t.Fatalf("writeAtomically() error = %v", err)
+		}
+		b, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatalf("ReadFile() error = %v", err)
+		}
+		if string(b) != "hello" {
+			t.Fatalf("file content = %q, want %q", string(b), "hello")
+		}
+	})
+
+	t.Run("create fail", func(t *testing.T) {
+		tmp := t.TempDir()
+		dir := filepath.Join(tmp, "nowrite")
+		if err := os.MkdirAll(dir, 0o500); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		out := filepath.Join(dir, "out.txt")
+		s := &Syncer{OutputPath: out}
+		defer os.Chmod(dir, 0o700)
+		if err := s.writeAtomically(io.NopCloser(strings.NewReader("x"))); err == nil {
+			t.Fatalf("writeAtomically() succeeded unexpectedly")
+		}
+	})
+}
+
+// TestSyncFlows groups subtests covering Sync behavior for NotModified, successful GET, and GET failure.
+//
+// This test covers end-to-end Sync flows including how head errors are handled, successful body writes,
+// and proper error propagation on non-2xx GET responses.
+func TestSyncFlows(t *testing.T) {
+	t.Run("GET NotModified", func(t *testing.T) {
+		tmp := t.TempDir()
+		out := filepath.Join(tmp, "out.txt")
+		client := &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodHead {
+				return nil, errors.New("head fail")
+			}
+			if req.Method == http.MethodGet {
+				return makeResp(http.StatusNotModified, nil, ""), nil
+			}
+			return nil, errors.New("unexpected")
+		}}
+		s := &Syncer{Client: client, Resource: "https://example.invalid/res", OutputPath: out}
+		if err := s.Sync(context.Background()); err != nil {
+			t.Fatalf("Sync() error = %v", err)
+		}
+		if _, err := os.Stat(out); err == nil {
+			t.Fatalf("file was created unexpectedly")
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("unexpected stat error: %v", err)
+		}
+	})
+
+	t.Run("GET Success writes file and updates validators", func(t *testing.T) {
+		tmp := t.TempDir()
+		out := filepath.Join(tmp, "out.txt")
+		client := &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodHead {
+				return makeResp(http.StatusMethodNotAllowed, nil, ""), nil
+			}
+			if req.Method == http.MethodGet {
+				return makeResp(http.StatusOK, map[string]string{"ETag": "v1", "Last-Modified": "lm"}, "bodycontent"), nil
+			}
+			return nil, errors.New("unexpected")
+		}}
+		s := &Syncer{Client: client, Resource: "https://example.invalid/res", OutputPath: out}
+		if err := s.Sync(context.Background()); err != nil {
+			t.Fatalf("Sync() error = %v", err)
+		}
+		b, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatalf("ReadFile() error = %v", err)
+		}
+		if string(b) != "bodycontent" {
+			t.Fatalf("file content = %q, want %q", string(b), "bodycontent")
+		}
+		if s.etag != "v1" {
+			t.Fatalf("etag = %q, want %q", s.etag, "v1")
+		}
+		if s.lastModified != "lm" {
+			t.Fatalf("lastModified = %q, want %q", s.lastModified, "lm")
+		}
+	})
+
+	t.Run("GET Failure returns error", func(t *testing.T) {
+		tmp := t.TempDir()
+		out := filepath.Join(tmp, "out.txt")
+		client := &stubDoer{fn: func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodHead {
+				return makeResp(http.StatusMethodNotAllowed, nil, ""), nil
+			}
+			if req.Method == http.MethodGet {
+				return makeResp(http.StatusInternalServerError, nil, ""), nil
+			}
+			return nil, errors.New("unexpected")
+		}}
+		s := &Syncer{Client: client, Resource: "https://example.invalid/res", OutputPath: out}
+		if err := s.Sync(context.Background()); err == nil {
+			t.Fatalf("Sync() succeeded unexpectedly on GET 500")
+		}
+	})
+}
+
 type response struct {
 	resp *http.Response
 	err  error
