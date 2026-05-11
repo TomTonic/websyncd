@@ -50,8 +50,8 @@ func TestAcquirePreventsConcurrentExecution(t *testing.T) {
 		t.Fatalf("second lock should be nil")
 	}
 
-	if err := first.Release(); err != nil {
-		t.Fatalf("Release() error = %v", err)
+	if releaseErr := first.Release(); releaseErr != nil {
+		t.Fatalf("Release() error = %v", releaseErr)
 	}
 	third, err := Acquire(
 		"https://example.invalid/resource",
@@ -80,7 +80,7 @@ func TestAcquireRemovesStaleLock(t *testing.T) {
 	t.Setenv("TMPDIR", tmp)
 
 	path := lockPath("https://example.invalid/resource", "/tmp/file")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 	staleTs := time.Now().Add(-2 * time.Hour).Unix()

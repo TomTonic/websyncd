@@ -1,3 +1,4 @@
+// Package app wires together the websyncd components and runs the daemon loop.
 package app
 
 import (
@@ -35,8 +36,9 @@ func LoadConfigFromEnv() (config.Config, error) {
 // Run starts the websyncd daemon and blocks until ctx is cancelled or a shutdown
 // signal (SIGINT, SIGTERM) is received.
 //
-// cfg is a fully validated Config, typically obtained from LoadConfigFromEnv.
-// logger receives all diagnostic output; pass nil to use log.Default().
+// cfg is a pointer to a fully validated Config, typically obtained from
+// LoadConfigFromEnv. logger receives all diagnostic output; pass nil to use
+// log.Default().
 //
 // Run acquires an exclusive lock for the given resource/output combination and
 // returns an error immediately if another instance already holds it. Once
@@ -45,7 +47,7 @@ func LoadConfigFromEnv() (config.Config, error) {
 //
 // Returns nil on clean shutdown. Returns an error if the lock cannot be
 // acquired or if a fatal initialisation step fails.
-func Run(ctx context.Context, cfg config.Config, logger *log.Logger) error {
+func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -142,8 +144,8 @@ func startWebhook(ctx context.Context, addr string, trigger func(string), logger
 		w.WriteHeader(http.StatusAccepted)
 	})
 
-	srv := &http.Server{Addr: addr, Handler: mux}
-	go func() {
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() { //nolint:gosec // G118: shutdown timeout must be independent of the cancelled parent context
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -203,8 +205,8 @@ func startSSE(ctx context.Context, doer httpclient.Doer, url string, trigger fun
 }
 
 func startHeartbeat(ctx context.Context, addr string, state *healthState, logger *log.Logger) {
-	srv := &http.Server{Addr: addr, Handler: heartbeatHandler(state)}
-	go func() {
+	srv := &http.Server{Addr: addr, Handler: heartbeatHandler(state), ReadHeaderTimeout: 5 * time.Second}
+	go func() { //nolint:gosec // G118: shutdown timeout must be independent of the cancelled parent context
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()

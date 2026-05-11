@@ -1,3 +1,5 @@
+// Package httpclient provides an HTTP client factory with optional HTTP/3 support
+// and automatic fallback to HTTP/1.1 or HTTP/2.
 package httpclient
 
 import (

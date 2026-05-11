@@ -1,3 +1,5 @@
+// Package config loads and validates websyncd runtime configuration from
+// environment variables.
 package config
 
 import (
@@ -45,12 +47,12 @@ func LoadFromEnv() (Config, error) {
 		HTTPTimeout:       envDuration("HTTP_TIMEOUT", 30*time.Second),
 		LockTTL:           envDuration("LOCK_TTL", 5*time.Minute),
 		HeartbeatInterval: envDuration("HEARTBEAT_INTERVAL", 5*time.Minute),
-		EnableWebhook:     envBool("ENABLE_WEBHOOK", false),
+		EnableWebhook:     envBool("ENABLE_WEBHOOK"),
 		WebhookAddr:       envString("WEBHOOK_ADDR", ":8080"),
-		EnableSSE:         envBool("ENABLE_SSE", false),
+		EnableSSE:         envBool("ENABLE_SSE"),
 		SSEURL:            os.Getenv("SSE_URL"),
-		EnableHTTP3:       envBool("ENABLE_HTTP3", false),
-		EnableHeartbeat:   envBool("ENABLE_HEARTBEAT", false),
+		EnableHTTP3:       envBool("ENABLE_HTTP3"),
+		EnableHeartbeat:   envBool("ENABLE_HEARTBEAT"),
 		HeartbeatAddr:     envString("HEARTBEAT_ADDR", ":8081"),
 	}
 
@@ -90,14 +92,14 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 	return d
 }
 
-func envBool(name string, fallback bool) bool {
+func envBool(name string) bool {
 	v := os.Getenv(name)
 	if v == "" {
-		return fallback
+		return false
 	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
-		return fallback
+		return false
 	}
 	return b
 }
