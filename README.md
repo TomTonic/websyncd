@@ -6,8 +6,8 @@ websyncd is a small Go daemon that keeps a local file in sync with a remote HTTP
 
 - **Bandwidth-efficient polling** — issues a `HEAD` request first; only fetches the full body with `GET` when the resource has actually changed (using `ETag` / `Last-Modified` conditional headers).
 - **Webhook trigger** — listens for `POST /` on a configurable address so external systems can push an immediate sync without waiting for the next poll tick.
--- **Resource event stream (SSE) trigger** — connects to a Server-Sent Events endpoint and triggers a sync on every event, with automatic reconnection on failure.
-- **HTTP/3 (QUIC) support** — optionally uses HTTP/3 with transparent fallback to HTTP/1.1+HTTP/2 for bodyless requests (HEAD) if the server does not support QUIC.
+- **Resource event stream (SSE) trigger** — connects to a Server-Sent Events endpoint and triggers a sync on every event, with automatic reconnection on failure.
+- **HTTP/3 Auto-Upgrade** — enabled by default; the first request to an origin uses TCP and the `Alt-Svc` response header is parsed. If the server advertises `h3`, subsequent requests automatically use HTTP/3 (QUIC). A per-origin cooldown prevents repeated QUIC attempts when UDP is blocked. Set `ENABLE_HTTP3=false` to opt out entirely.
 - **Atomic file writes** — writes to a temporary file in the same directory, then renames it into place, so readers never see a partial file.
 - **Instance locking** — uses a PID/timestamp lock file in `$TMPDIR` (keyed by a SHA-256 of the resource URL + output path) to prevent two daemons from racing over the same file. Stale locks from crashed processes are cleared automatically after a configurable TTL.
 - **Graceful shutdown** — handles `SIGINT` / `SIGTERM` and stops all goroutines cleanly.
@@ -87,7 +87,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `HEARTBEAT_ADDR`     | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081` or `:8081`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
 | `HTTP_TIMEOUT`       | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`           | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
-| `ENABLE_HTTP3`       | no       | `false`  | When `true`, use HTTP/3 (QUIC) as the primary transport with automatic fallback. |
+| `ENABLE_HTTP3`       | no       | `true`   | Set to `false` to disable HTTP/3 Auto-Upgrade entirely (useful when QUIC is blocked or causes problems). When `true` (default), the first request to an origin uses TCP; if the server's `Alt-Svc` response header advertises `h3`, subsequent requests use HTTP/3 (QUIC) automatically. A per-origin cooldown of ~7 minutes prevents repeated QUIC retries after a failure. |
 | `DOWNLOAD_PROGRESS_INTERVAL` | no | `5s` | How often to emit progress log messages during long-running downloads (Go duration string, e.g. `5s`, `1m`, `500ms`). |
 
 ### Examples
@@ -148,8 +148,15 @@ Each sync cycle produces structured log lines that explain:
 ### Instance locking
 The lock file path is derived from a SHA-256 digest of `RESOURCE_URL + "|" + OUTPUT_PATH`. This allows multiple websyncd instances to run concurrently for different resource/output combinations on the same host, while still preventing duplicate instances for the same pair. If a lock file is found that is older than `LOCK_TTL`, it is treated as stale (the previous process likely crashed) and removed.
 
-### HTTP/3 fallback
-When `ENABLE_HTTP3=true`, requests are attempted over QUIC first. For requests without a body (all HEAD requests, and GET requests where the body has not yet been read), a transparent retry over HTTP/1.1 is performed if the QUIC attempt fails — for example, because the server does not advertise QUIC support.
+### HTTP/3 Auto-Upgrade (Alt-Svc)
+HTTP/3 is enabled by default. The mechanism is based on the server-advertised `Alt-Svc` HTTP response header:
+
+1. The first request to an origin always goes over TCP (HTTP/1.1 or HTTP/2).
+2. If the response includes an `Alt-Svc` header with an `h3` token (e.g. `h3=":443"; ma=86400`), the origin is promoted in an in-memory cache. The `ma` (max-age) parameter controls how long the entry is valid; if absent a default TTL of 24 hours is used.
+3. All subsequent requests to that origin use HTTP/3 (QUIC) directly.
+4. If an HTTP/3 attempt fails, a 7-minute cooldown is recorded for that origin so that UDP-blocked networks are not flooded with failing QUIC attempts.
+
+Set `ENABLE_HTTP3=false` to disable the feature entirely and always use TCP.
 
 ## License
 

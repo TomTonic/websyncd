@@ -34,6 +34,9 @@ type Config struct {
 // defaults are documented in the project README. If `RESOURCE_EVENT_URL` is set
 // the daemon will consume the stream for push-driven updates.
 //
+// HTTP/3 Auto-Upgrade is enabled by default; set ENABLE_HTTP3=false to opt out
+// (useful if QUIC is blocked on the network or causes compatibility issues).
+//
 // Returns a fully populated Config on success, or an error describing the first
 // missing or invalid required variable.
 //
@@ -101,14 +104,16 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 	return d
 }
 
+// envEnableHTTP3 returns true by default (HTTP/3 Auto-Upgrade is enabled unless
+// the caller explicitly opts out by setting ENABLE_HTTP3=false).
 func envEnableHTTP3() bool {
 	v := os.Getenv("ENABLE_HTTP3")
 	if v == "" {
-		return false
+		return true
 	}
 	b, err := strconv.ParseBool(v)
 	if err != nil {
-		return false
+		return true
 	}
 	return b
 }

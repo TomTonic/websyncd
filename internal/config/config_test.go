@@ -87,13 +87,17 @@ func TestEnvHelpers(t *testing.T) {
 		if !envEnableHTTP3() {
 			t.Fatalf("envBool returned false for true value")
 		}
-		t.Setenv("ENABLE_HTTP3", "notbool")
+		t.Setenv("ENABLE_HTTP3", "false")
 		if envEnableHTTP3() {
-			t.Fatalf("envBool returned true for invalid value")
+			t.Fatalf("envBool returned true for false value")
+		}
+		t.Setenv("ENABLE_HTTP3", "notbool")
+		if !envEnableHTTP3() {
+			t.Fatalf("envBool returned false for invalid value, want default true")
 		}
 		t.Setenv("ENABLE_HTTP3", "")
-		if envEnableHTTP3() {
-			t.Fatalf("envBool returned true for empty value")
+		if !envEnableHTTP3() {
+			t.Fatalf("envBool returned false for empty value, want default true")
 		}
 	})
 }
