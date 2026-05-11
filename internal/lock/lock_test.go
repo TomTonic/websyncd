@@ -95,7 +95,10 @@ func TestAcquireRemovesStaleLock(t *testing.T) {
 	_ = l.Release()
 }
 
-// TestReleaseNil verifies Release is safe to call on a nil receiver.
+// TestReleaseNil confirms Release is safe to call on a nil Lock.
+//
+// This test covers the idempotency of Release: calling Release on a nil
+// receiver must not return an error so callers can safely defer Release.
 func TestReleaseNil(t *testing.T) {
 	var l *Lock
 	if err := l.Release(); err != nil {
@@ -103,8 +106,10 @@ func TestReleaseNil(t *testing.T) {
 	}
 }
 
-// TestReleaseAfterManualRemove ensures Release handles the case where the
-// lock file was removed externally before Release is called (idempotency).
+// TestReleaseAfterManualRemove checks Release handles a missing lock file gracefully.
+//
+// This test covers the scenario where an external agent removes the lock file
+// before Release is called. Release should succeed (be a no-op) and return nil.
 func TestReleaseAfterManualRemove(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
@@ -123,7 +128,12 @@ func TestReleaseAfterManualRemove(t *testing.T) {
 	}
 }
 
-// TestIsStaleCoversMissingAndMalformedAndFresh cases for isStale.
+// TestIsStaleCoversMissingAndMalformedAndFresh exercises isStale for missing,
+// malformed, fresh and expired timestamps.
+//
+// This test covers the parsing and TTL logic of isStale by creating files with
+// no timestamp, a non-numeric timestamp, a recent timestamp (not stale) and an
+// old timestamp (stale). It asserts the boolean result is correct in each case.
 func TestIsStaleCoversMissingAndMalformedAndFresh(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
