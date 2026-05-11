@@ -84,8 +84,7 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `POLL_INTERVAL`  | no       | `30m`    | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `HTTP_TIMEOUT`   | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`       | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
-| `ENABLE_WEBHOOK` | no       | `false`  | When `true`, start an HTTP server that accepts `POST /` to trigger an immediate sync. |
-| `WEBHOOK_ADDR`   | no       | `:8080`  | Address the webhook server listens on (e.g. `127.0.0.1:9000`). |
+| `WEBHOOK_ADDR`   | no       | `—`      | If set, start an HTTP webhook server that accepts `POST /` to trigger an immediate sync (e.g. `127.0.0.1:8080`). |
 | `ENABLE_SSE`     | no       | `false`  | When `true`, connect to `SSE_URL` and trigger a sync on each event. |
 | `SSE_URL`        | cond.    | —        | Required when `ENABLE_SSE=true`. URL of the SSE stream. |
 | `ENABLE_HTTP3`   | no       | `false`  | When `true`, use HTTP/3 (QUIC) as the primary transport with automatic fallback. |
@@ -99,7 +98,6 @@ Poll every 10 seconds and trigger via webhook on port 9000:
 RESOURCE_URL=https://cdn.example.com/config.yaml \
 OUTPUT_PATH=/etc/myapp/config.yaml \
 POLL_INTERVAL=10s \
-ENABLE_WEBHOOK=true \
 WEBHOOK_ADDR=:9000 \
 ./websyncd
 ```

@@ -52,8 +52,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 		logger = log.Default()
 	}
 	logger.Printf(
-		"starting websyncd: resource=%s output=%s poll_interval=%s webhook=%t sse=%t heartbeat_addr=%q http3=%t",
-		cfg.ResourceURL, cfg.OutputPath, cfg.PollInterval, cfg.EnableWebhook, cfg.EnableSSE, cfg.HeartbeatAddr, cfg.EnableHTTP3,
+		"starting websyncd: resource=%s output=%s poll_interval=%s webhook_addr=%q sse=%t heartbeat_addr=%q http3=%t",
+		cfg.ResourceURL, cfg.OutputPath, cfg.PollInterval, cfg.WebhookAddr, cfg.EnableSSE, cfg.HeartbeatAddr, cfg.EnableHTTP3,
 	)
 
 	doer, closeClient := httpclient.New(cfg.HTTPTimeout, cfg.EnableHTTP3)
@@ -98,7 +98,8 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	}()
 	// heartbeat log messages removed; only heartbeat endpoint (if enabled)
 
-	if cfg.EnableWebhook {
+	// Start webhook server only when WEBHOOK_ADDR is explicitly set.
+	if cfg.WebhookAddr != "" {
 		go startWebhook(signalCtx, cfg.WebhookAddr, trigger, logger)
 	}
 	if cfg.EnableSSE {
