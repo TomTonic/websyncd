@@ -4,8 +4,11 @@ package config
 
 import (
 	"fmt"
+	"net"
+	urlpkg "net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -54,8 +57,21 @@ func LoadFromEnv() (Config, error) {
 	if cfg.OutputPath == "" {
 		return Config{}, fmt.Errorf("OUTPUT_PATH is required")
 	}
-	// RESOURCE_EVENT_URL is optional; when empty the daemon runs in polling mode
-	// and will not attempt to connect to an event stream.
+	// Validate URLs and addresses.
+	if err := validateURL(cfg.ResourceURL, "RESOURCE_URL"); err != nil {
+		return Config{}, err
+	}
+	if cfg.ResourceEventURL != "" {
+		if err := validateURL(cfg.ResourceEventURL, "RESOURCE_EVENT_URL"); err != nil {
+			return Config{}, err
+		}
+	}
+	if err := validateAddr(cfg.WebhookAddr, "WEBHOOK_ADDR"); err != nil {
+		return Config{}, err
+	}
+	if err := validateAddr(cfg.HeartbeatAddr, "HEARTBEAT_ADDR"); err != nil {
+		return Config{}, err
+	}
 
 	return cfg, nil
 }
@@ -93,4 +109,81 @@ func envBool(name string) bool {
 		return false
 	}
 	return b
+}
+
+// validateURL ensures the provided string is an absolute HTTP(S) URL with a host.
+func validateURL(s, name string) error {
+	if s == "" {
+		return fmt.Errorf("%s is required", name)
+	}
+	u, err := urlpkg.ParseRequestURI(s)
+	if err != nil {
+		return fmt.Errorf("%s: invalid URL %q: %w", name, s, err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("%s: unsupported URL scheme %q", name, u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%s: missing host in URL %q", name, s)
+	}
+	return nil
+}
+
+// validateAddr ensures the provided address is either empty or in host:port
+// format where host is empty or an IP address and port is a valid numeric port.
+func validateAddr(s, name string) error {
+	if s == "" {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(s)
+	if err != nil {
+		return fmt.Errorf("%s: invalid address %q: %w", name, s, err)
+	}
+	if port == "" {
+		return fmt.Errorf("%s: missing port in address %q", name, s)
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 || p > 65535 {
+		return fmt.Errorf("%s: invalid port in address %q", name, s)
+	}
+	if host != "" {
+		// Accept IP addresses or hostnames (e.g. localhost, my-host.example).
+		if ip := net.ParseIP(host); ip != nil {
+			return nil
+		}
+		if !isValidHostname(host) {
+			return fmt.Errorf("%s: invalid host in address %q", name, host)
+		}
+	}
+	return nil
+}
+
+// isValidHostname performs a conservative syntactic check for DNS hostnames.
+// It accepts labels of 1-63 chars, total length <=255, letters, digits and hyphen
+// and disallows labels starting/ending with a hyphen. A trailing dot is allowed.
+func isValidHostname(h string) bool {
+	if h == "" {
+		return false
+	}
+	// Allow and strip a trailing dot (FQDN)
+	h = strings.TrimSuffix(h, ".")
+	if h == "" || len(h) > 255 {
+		return false
+	}
+	parts := strings.Split(h, ".")
+	for _, label := range parts {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, ch := range label {
+			if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
 }

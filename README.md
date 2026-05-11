@@ -79,15 +79,15 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 
 | Variable         | Required | Default  | Description |
 |------------------|----------|----------|-------------|
-| `RESOURCE_URL`   | yes      | —        | URL of the remote resource to sync. |
+| `RESOURCE_URL`   | yes      | —        | URL of the remote resource to sync. Must be a valid `http://` or `https://` URL. |
 | `OUTPUT_PATH`    | yes      | —        | Local file path to write the resource to. Parent directories are created automatically. |
 | `POLL_INTERVAL`  | no       | `30m`    | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `HTTP_TIMEOUT`   | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`       | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
-| `WEBHOOK_ADDR`   | no       | `—`      | If set, start an HTTP webhook server that accepts `POST /` to trigger an immediate sync (e.g. `127.0.0.1:8080`). |
-| `RESOURCE_EVENT_URL` | no   | `—`      | If set, connect to this Server-Sent Events (SSE) stream and trigger a sync on each event. |
+| `WEBHOOK_ADDR`   | no       | `—`      | If set, start an HTTP webhook server that accepts `POST /` to trigger an immediate sync (e.g. `127.0.0.1:8080` or `:9000`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
+| `RESOURCE_EVENT_URL` | no   | `—`      | If set, connect to this Server-Sent Events (SSE) stream and trigger a sync on each event. Must be a valid `http://` or `https://` URL. |
 | `ENABLE_HTTP3`   | no       | `false`  | When `true`, use HTTP/3 (QUIC) as the primary transport with automatic fallback. |
-| `HEARTBEAT_ADDR` | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081`). |
+| `HEARTBEAT_ADDR` | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081` or `:8081`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
 
 ### Examples
 
