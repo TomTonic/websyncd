@@ -54,7 +54,7 @@ docker run --rm \
 Optional: add a Docker healthcheck against the heartbeat endpoint:
 
 ```sh
---health-cmd='wget -q -O - http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1' \
+--health-cmd='curl -fS http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1' \
 --health-interval=30s --health-timeout=5s --health-retries=3
 ```
 
