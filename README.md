@@ -12,7 +12,7 @@ websyncd is a small Go daemon that keeps a local file in sync with a remote HTTP
 - **Instance locking** — uses a PID/timestamp lock file in `$TMPDIR` (keyed by a SHA-256 of the resource URL + output path) to prevent two daemons from racing over the same file. Stale locks from crashed processes are cleared automatically after a configurable TTL.
 - **Graceful shutdown** — handles `SIGINT` / `SIGTERM` and stops all goroutines cleanly.
 - **Operational logging** — emits detailed sync diagnostics: trigger source, download decision, local replace/skip decision, protocol (`HTTP`/`HTTPS` + HTTP version), transfer rate, size delta, and freshness delta.
-- **Heartbeat endpoint** — optional `GET /healthz` endpoint for liveness monitoring (ideal for Docker `healthcheck`).
+- **Heartbeat endpoints** — optional probe endpoints for orchestration: `GET /healthz` (liveness from internal heartbeat, independent of poll interval or upstream availability) and `GET /readyz` (readiness after first successful upstream response).
 - **Container-friendly configuration** — all settings are read from environment variables; no config files required.
 
 ## Usage
@@ -86,12 +86,23 @@ The published `ghcr.io/tomtonic/websyncd:latest` image is multi-arch (linux/amd6
 | `OUTPUT_FILE_ATTRIBUTES` | no   | `—`      | Optional output file attributes in format `uid:gid:mode` (for example `1000:1000:0644`). When set, replacements are written with exactly these owner/group/permissions. When unset and target exists, owner/group/permissions are inherited from the existing file. When unset and target does not exist, owner/group follow process defaults and permissions default to `ugo+r` (`0644`). |
 | `POLL_INTERVAL`      | no       | `30m`    | How often to poll the remote resource (Go duration string, e.g. `30s`, `5m`). |
 | `WEBHOOK_ADDR`       | no       | `—`      | If set, start an HTTP webhook server that accepts `POST /` to trigger an immediate sync attempt (e.g. `127.0.0.1:8080` or `:9000`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
-| `HEARTBEAT_ADDR`     | no       | `—`      | If set, start an HTTP heartbeat endpoint for liveness checks at this address (e.g. `127.0.0.1:8081` or `:8081`). Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
+| `HEARTBEAT_ADDR`     | no       | `—`      | If set, start HTTP probe endpoints at this address (e.g. `127.0.0.1:8081` or `:8081`). `GET /healthz` reports liveness (internal daemon heartbeat), `GET /readyz` reports readiness (first successful upstream response). See Heartbeat endpoints section for status codes. Must be `host:port` where `host` is an IP address, hostname, or empty and `port` is a numeric port. |
 | `HTTP_TIMEOUT`       | no       | `30s`    | Timeout for individual HTTP requests. |
 | `LOCK_TTL`           | no       | `5m`     | How long before a lock from a previous (crashed) instance is considered stale. |
 | `ENABLE_HTTP3`       | no       | `true`   | Set to `false` to disable HTTP/3 Auto-Upgrade entirely (useful when QUIC is blocked or causes problems). When `true` (default), the first request to an origin uses TCP; if the server's `Alt-Svc` response header advertises `h3`, subsequent requests use HTTP/3 (QUIC) automatically. A per-origin cooldown of ~7 minutes prevents repeated QUIC retries after a failure. |
 | `DOWNLOAD_PROGRESS_INTERVAL` | no | `5s` | How often to emit progress log messages during long-running downloads (Go duration string, e.g. `5s`, `1m`, `500ms`). |
 | `MAX_DOWNLOAD_BYTES` | no       | `0`      | Maximum allowed size for a downloaded response body in bytes (non-negative integer). Use a value >0 to protect against runaway responses; `0` means no limit. |
+
+### Semantics and Status Codes of HTTP Probing Endpoints
+
+- `/healthz` (Liveness)
+  - `200 OK`: Internal daemon loop is responsive (heartbeat firing every 15s).
+  - `500 Internal Server Error`: Loop heartbeat stalled (reason: `loop_heartbeat_stalled` or `loop_heartbeat_missing`).
+  
+- `/readyz` (Readiness)
+  - `200 OK`: At least one successful upstream response received and failure rate acceptable.
+  - `500 Internal Server Error`: Resource not accessible (reason: `resource_not_accessible` if no success yet, `resource_recently_unavailable` if failure rate > 50%).
+  - `503 Service Unavailable`: Initial sync pending (never attempted).
 
 ### Examples
 
@@ -125,6 +136,12 @@ Heartbeat endpoint check (when enabled):
 
 ```sh
 curl http://127.0.0.1:8081/healthz
+```
+
+Readiness endpoint check (when enabled):
+
+```sh
+curl http://127.0.0.1:8081/readyz
 ```
 
 ## Design Decisions
