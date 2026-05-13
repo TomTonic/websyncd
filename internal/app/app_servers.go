@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -118,30 +117,97 @@ func startHeartbeat(ctx context.Context, addr string, state *healthState, logger
 func heartbeatHandler(state *healthState) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		s := state.snapshot(time.Now())
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "status=ok\n")
-		_, _ = io.WriteString(w, "uptime_seconds="+strconv.FormatInt(int64(s.Uptime.Seconds()), 10)+"\n")
-		_, _ = io.WriteString(w, "sync_total="+strconv.FormatUint(s.SyncTotal, 10)+"\n")
-		_, _ = io.WriteString(w, "sync_success="+strconv.FormatUint(s.SyncSuccess, 10)+"\n")
-		_, _ = io.WriteString(w, "sync_failure="+strconv.FormatUint(s.SyncFailure, 10)+"\n")
-		_, _ = io.WriteString(w, "last_sync_age="+formatAge(s.LastSyncAt, s.Now)+"\n")
-		_, _ = io.WriteString(w, "last_success_age="+formatAge(s.LastSuccessAt, s.Now)+"\n")
-		_, _ = io.WriteString(w, "last_failure_age="+formatAge(s.LastFailureAt, s.Now)+"\n")
-		if s.LastError != "" {
-			// Sanitise the error string: server-controlled content may contain
-			// newlines that would inject fake key=value lines into the response.
-			safeErr := strings.NewReplacer("\n", " ", "\r", " ").Replace(s.LastError)
-			_, _ = io.WriteString(w, "last_error="+safeErr+"\n")
-		}
+		serveHeartbeatProbe(w, r, state, "liveness")
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		serveHeartbeatProbe(w, r, state, "readiness")
 	})
 	return mux
+}
+
+func serveHeartbeatProbe(w http.ResponseWriter, r *http.Request, state *healthState, probe string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	s := state.snapshot(time.Now())
+	statusCode := 0
+	statusText := "ok"
+	reason := ""
+
+	switch probe {
+	case "liveness":
+		statusCode, reason = livenessStatus(&s)
+	case "readiness":
+		statusCode, reason = readinessStatus(&s)
+	default:
+		statusCode = http.StatusInternalServerError
+		reason = "invalid_probe_type"
+	}
+
+	if statusCode != http.StatusOK {
+		statusText = "error"
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(statusCode)
+	_, _ = io.WriteString(w, "status="+statusText+"\n")
+	_, _ = io.WriteString(w, "probe="+probe+"\n")
+	if reason != "" {
+		_, _ = io.WriteString(w, "reason="+reason+"\n")
+	}
+	_, _ = io.WriteString(w, "loop_beat_age="+formatAge(s.LastLoopBeat, s.Now)+"\n")
+	_, _ = io.WriteString(w, "last_success_age="+formatAge(s.LastSuccessAt, s.Now)+"\n")
+	_, _ = io.WriteString(w, "last_failure_age="+formatAge(s.LastFailureAt, s.Now)+"\n")
+	if s.LastError != "" {
+		// Sanitise the error string: server-controlled content may contain
+		// newlines that would inject fake key=value lines into the response.
+		safeErr := strings.NewReplacer("\n", " ", "\r", " ").Replace(s.LastError)
+		_, _ = io.WriteString(w, "last_error="+safeErr+"\n")
+	}
+}
+
+func livenessStatus(s *healthSnapshot) (int, string) {
+	if s.LastLoopBeat.IsZero() {
+		return http.StatusInternalServerError, "loop_heartbeat_missing"
+	}
+
+	if s.Now.Sub(s.LastLoopBeat) > livenessStaleAfter(daemonHeartbeatInterval) {
+		return http.StatusInternalServerError, "loop_heartbeat_stalled"
+	}
+
+	return http.StatusOK, ""
+}
+
+func readinessStatus(s *healthSnapshot) (int, string) {
+	if s.SyncSuccess == 0 {
+		if s.SyncFailure > 0 {
+			return http.StatusInternalServerError, "resource_not_accessible"
+		}
+		return http.StatusServiceUnavailable, "initial_sync_pending"
+	}
+
+	if s.SyncFailure > 0 {
+		failureRate := float64(s.SyncFailure) / float64(s.SyncTotal)
+		if failureRate > 0.5 || (s.SyncFailure >= 3 && s.SyncFailure > s.SyncSuccess) {
+			return http.StatusInternalServerError, "resource_recently_unavailable"
+		}
+	}
+
+	return http.StatusOK, ""
+}
+
+func livenessStaleAfter(heartbeatInterval time.Duration) time.Duration {
+	if heartbeatInterval <= 0 {
+		heartbeatInterval = daemonHeartbeatInterval
+	}
+	staleAfter := 3*heartbeatInterval + 2*time.Second
+	if staleAfter < 10*time.Second {
+		return 10 * time.Second
+	}
+	return staleAfter
 }
 
 func logSyncReport(logger *log.Logger, trigger string, elapsed time.Duration, report *syncer.SyncReport) {

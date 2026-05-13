@@ -62,6 +62,7 @@ func TestHealthStateSnapshot(t *testing.T) {
 // including sync counters and the last error message.
 func TestHeartbeatHandlerHealthz(t *testing.T) {
 	state := newHealthState(time.Now().Add(-20 * time.Second))
+	state.recordLoopBeat(time.Now().Add(-2 * time.Second))
 	state.recordSyncStart(time.Now().Add(-6 * time.Second))
 	state.recordSyncSuccess(time.Now().Add(-5 * time.Second))
 	state.recordSyncStart(time.Now().Add(-4 * time.Second))
@@ -77,11 +78,127 @@ func TestHeartbeatHandlerHealthz(t *testing.T) {
 	body := rr.Body.String()
 	for _, want := range []string{
 		"status=ok",
-		"sync_total=2",
-		"sync_success=1",
-		"sync_failure=1",
-		"last_error=sync failed",
+		"probe=liveness",
+		"loop_beat_age=",
 	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// TestHeartbeatHandlerReadyzHealthyAfterSuccessfulSync verifies that the
+// readiness endpoint reports ready once at least one sync has completed
+// successfully.
+//
+// This test covers the heartbeatHandler readiness branch in the app package.
+//
+// It records a successful sync and asserts /readyz responds with HTTP 200.
+func TestHeartbeatHandlerReadyzHealthyAfterSuccessfulSync(t *testing.T) {
+	state := newHealthState(time.Now().Add(-20 * time.Second))
+	state.recordLoopBeat(time.Now().Add(-2 * time.Second))
+	state.recordSyncStart(time.Now().Add(-6 * time.Second))
+	state.recordSyncSuccess(time.Now().Add(-5 * time.Second))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	heartbeatHandler(state).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"status=ok", "probe=readiness"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// TestHeartbeatHandlerReadyzUnavailableUntilFirstSuccess verifies that the
+// readiness endpoint reports unavailable (500) when resource is inaccessible.
+//
+// This test covers the heartbeatHandler readiness branch in the app package.
+//
+// It records only failed syncs and asserts /readyz responds with HTTP 500.
+func TestHeartbeatHandlerReadyzUnavailableUntilFirstSuccess(t *testing.T) {
+	state := newHealthState(time.Now().Add(-20 * time.Second))
+	state.recordLoopBeat(time.Now().Add(-2 * time.Second))
+	state.recordSyncStart(time.Now().Add(-6 * time.Second))
+	state.recordSyncFailure(time.Now().Add(-5*time.Second), errors.New("upstream unavailable"))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	heartbeatHandler(state).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"status=error", "probe=readiness", "reason=resource_not_accessible"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// TestHeartbeatHandlerReadyzDetectsRecentUnavailability verifies that the
+// readiness endpoint reports unavailable (500) when the failure rate exceeds
+// tolerance thresholds despite some historical successes.
+//
+// This test covers the failure-rate logic in the app package.
+//
+// It records multiple failures after some successes and asserts /readyz
+// responds with 500 and a resource unavailability reason.
+func TestHeartbeatHandlerReadyzDetectsRecentUnavailability(t *testing.T) {
+	state := newHealthState(time.Now().Add(-20 * time.Second))
+	state.recordLoopBeat(time.Now().Add(-2 * time.Second))
+
+	state.recordSyncStart(time.Now().Add(-10 * time.Second))
+	state.recordSyncSuccess(time.Now().Add(-9 * time.Second))
+
+	for i := 0; i < 4; i++ {
+		state.recordSyncStart(time.Now().Add(-time.Duration(8-i) * time.Second))
+		state.recordSyncFailure(time.Now().Add(-time.Duration(7-i)*time.Second), errors.New("resource unavailable"))
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	heartbeatHandler(state).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"status=error", "probe=readiness", "reason=resource_recently_unavailable"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// TestHeartbeatHandlerHealthzDetectsStalledLoop verifies that liveness fails
+// when no sync attempt has been observed within the liveness stale window.
+//
+// This test covers the heartbeatHandler liveness branch in the app package.
+//
+// It sets a short poll interval and an old last sync timestamp, then asserts
+// /healthz responds with HTTP 500 and a stalled-loop reason.
+func TestHeartbeatHandlerHealthzDetectsStalledLoop(t *testing.T) {
+	state := newHealthState(time.Now().Add(-5 * time.Minute))
+	state.recordLoopBeat(time.Now().Add(-2 * time.Minute))
+	state.recordSyncStart(time.Now().Add(-10 * time.Second))
+	state.recordSyncFailure(time.Now().Add(-10*time.Second), errors.New("upstream unavailable"))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	heartbeatHandler(state).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"status=error", "probe=liveness", "reason=loop_heartbeat_stalled"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q:\n%s", want, body)
 		}
@@ -95,15 +212,17 @@ func TestHeartbeatHandlerHealthz(t *testing.T) {
 //
 // It sends a POST request and asserts both the status code and the Allow header.
 func TestHeartbeatHandlerMethodNotAllowed(t *testing.T) {
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
-	heartbeatHandler(newHealthState(time.Now())).ServeHTTP(rr, req)
+	for _, path := range []string{"/healthz", "/readyz"} {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		heartbeatHandler(newHealthState(time.Now())).ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusMethodNotAllowed)
-	}
-	if got := rr.Header().Get("Allow"); got != http.MethodGet {
-		t.Fatalf("Allow = %q, want %q", got, http.MethodGet)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("path=%s status = %d, want %d", path, rr.Code, http.StatusMethodNotAllowed)
+		}
+		if got := rr.Header().Get("Allow"); got != http.MethodGet {
+			t.Fatalf("path=%s Allow = %q, want %q", path, got, http.MethodGet)
+		}
 	}
 }
 

@@ -18,6 +18,11 @@ import (
 	"github.com/TomTonic/websyncd/internal/syncer"
 )
 
+const (
+	daemonHeartbeatInterval = 5 * time.Second
+	pollTickerSubsampling   = 6
+)
+
 type reportSyncer interface {
 	SyncWithReport(ctx context.Context) (syncer.SyncReport, error)
 }
@@ -89,9 +94,9 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	trigger := makeTriggerSender(triggers, logger)
 	trigger("startup")
 
-	pollTicker := time.NewTicker(cfg.PollInterval)
-	defer pollTicker.Stop()
-	go startPollTrigger(signalCtx, pollTicker.C, trigger)
+	heartbeatTicker := time.NewTicker(daemonHeartbeatInterval)
+	defer heartbeatTicker.Stop()
+	go startHeartbeatAndPollTrigger(signalCtx, heartbeatTicker.C, health, cfg.PollInterval, trigger, logger)
 
 	// Start webhook server only when WEBHOOK_ADDR is explicitly set.
 	if cfg.WebhookAddr != "" {
@@ -121,14 +126,29 @@ func makeTriggerSender(triggers chan<- string, logger *log.Logger) func(string) 
 	}
 }
 
-// startPollTrigger emits periodic poll triggers until the context is cancelled.
-func startPollTrigger(ctx context.Context, ticks <-chan time.Time, trigger func(string)) {
+// startHeartbeatAndPollTrigger emits a fast heartbeat every daemonHeartbeatInterval
+// and subsamples it to trigger poll at the configured poll interval. This decouples
+// liveness monitoring (fast heartbeat) from polling frequency (possibly long interval).
+func startHeartbeatAndPollTrigger(ctx context.Context, ticks <-chan time.Time, health *healthState, pollInterval time.Duration, trigger func(string), _ *log.Logger) {
+	ticker := uint64(0)
+	pollCycleDuration := time.Duration(pollTickerSubsampling) * daemonHeartbeatInterval
+	// Use int64 for intermediate calculation to avoid overflow, then convert to uint64
+	cycles := int64(pollInterval/pollCycleDuration) + 1
+	if cycles < 1 {
+		cycles = 1
+	}
+	pollCycle := uint64(cycles)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticks:
-			trigger("poll")
+		case now := <-ticks:
+			health.recordLoopBeat(now)
+			ticker++
+			if ticker%pollCycle == 0 {
+				trigger("poll")
+			}
 		}
 	}
 }
@@ -181,6 +201,7 @@ func handleTrigger(ctx context.Context, s reportSyncer, health *healthState, log
 type healthState struct {
 	mu            sync.RWMutex
 	startedAt     time.Time
+	lastLoopBeat  time.Time
 	lastSyncAt    time.Time
 	lastSuccessAt time.Time
 	lastFailureAt time.Time
@@ -191,7 +212,7 @@ type healthState struct {
 }
 
 func newHealthState(now time.Time) *healthState {
-	return &healthState{startedAt: now}
+	return &healthState{startedAt: now, lastLoopBeat: now}
 }
 
 func (s *healthState) recordSyncStart(now time.Time) {
@@ -219,10 +240,17 @@ func (s *healthState) recordSyncFailure(now time.Time, err error) {
 	}
 }
 
+func (s *healthState) recordLoopBeat(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastLoopBeat = now
+}
+
 // healthSnapshot is a point-in-time view of health metrics.
 type healthSnapshot struct {
 	Now           time.Time
 	Uptime        time.Duration
+	LastLoopBeat  time.Time
 	LastSyncAt    time.Time
 	LastSuccessAt time.Time
 	LastFailureAt time.Time
@@ -238,6 +266,7 @@ func (s *healthState) snapshot(now time.Time) healthSnapshot {
 	return healthSnapshot{
 		Now:           now,
 		Uptime:        now.Sub(s.startedAt),
+		LastLoopBeat:  s.lastLoopBeat,
 		LastSyncAt:    s.lastSyncAt,
 		LastSuccessAt: s.lastSuccessAt,
 		LastFailureAt: s.lastFailureAt,
