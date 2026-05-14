@@ -259,6 +259,18 @@ func TestLoadFromEnvSuccess(t *testing.T) {
 	}
 }
 
+// TestPollIntervalMinimum ensures POLL_INTERVAL is clamped to a sensible
+// minimum (5s) to avoid accidental rapid polling due to misconfiguration.
+func TestPollIntervalMinimum(t *testing.T) {
+	t.Setenv("RESOURCE_URL", "https://example.invalid/data")
+	t.Setenv("OUTPUT_PATH", "/tmp/data.txt")
+	t.Setenv("POLL_INTERVAL", "1s")
+
+	if _, err := LoadFromEnv(); err == nil {
+		t.Fatalf("LoadFromEnv() succeeded with too-small POLL_INTERVAL, want error")
+	}
+}
+
 // TestParseOutputFileAttributes verifies that OUTPUT_FILE_ATTRIBUTES parsing
 // accepts valid uid:gid:mode values and rejects malformed input.
 //

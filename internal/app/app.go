@@ -20,7 +20,6 @@ import (
 
 const (
 	daemonHeartbeatInterval = 5 * time.Second
-	pollTickerSubsampling   = 6
 )
 
 type reportSyncer interface {
@@ -130,14 +129,14 @@ func makeTriggerSender(triggers chan<- string, logger *log.Logger) func(string) 
 // and subsamples it to trigger poll at the configured poll interval. This decouples
 // liveness monitoring (fast heartbeat) from polling frequency (possibly long interval).
 func startHeartbeatAndPollTrigger(ctx context.Context, ticks <-chan time.Time, health *healthState, pollInterval time.Duration, trigger func(string), _ *log.Logger) {
-	ticker := uint64(0)
-	pollCycleDuration := time.Duration(pollTickerSubsampling) * daemonHeartbeatInterval
-	// Use int64 for intermediate calculation to avoid overflow, then convert to uint64
-	cycles := int64(pollInterval/pollCycleDuration) + 1
-	if cycles < 1 {
-		cycles = 1
+	ticksSincePoll := int64(0)
+	pollEveryTicks := pollInterval / daemonHeartbeatInterval
+	if pollInterval%daemonHeartbeatInterval != 0 {
+		pollEveryTicks++
 	}
-	pollCycle := uint64(cycles)
+	if pollEveryTicks < 1 {
+		pollEveryTicks = 1
+	}
 
 	for {
 		select {
@@ -145,8 +144,9 @@ func startHeartbeatAndPollTrigger(ctx context.Context, ticks <-chan time.Time, h
 			return
 		case now := <-ticks:
 			health.recordLoopBeat(now)
-			ticker++
-			if ticker%pollCycle == 0 {
+			ticksSincePoll++
+			if ticksSincePoll >= int64(pollEveryTicks) {
+				ticksSincePoll = 0
 				trigger("poll")
 			}
 		}
