@@ -51,7 +51,7 @@ func LoadFromEnv() (Config, error) {
 	cfg := Config{
 		ResourceURL:              os.Getenv("RESOURCE_URL"),
 		OutputPath:               os.Getenv("OUTPUT_PATH"),
-		PollInterval:             envDuration("POLL_INTERVAL", 30*time.Minute),
+		PollInterval:             envDuration("POLL_INTERVAL", 1*time.Hour),
 		HTTPTimeout:              envDuration("HTTP_TIMEOUT", 30*time.Second),
 		LockTTL:                  envDuration("LOCK_TTL", 5*time.Minute),
 		WebhookAddr:              envString("WEBHOOK_ADDR", ""),
@@ -61,6 +61,11 @@ func LoadFromEnv() (Config, error) {
 		DownloadProgressInterval: envDuration("DOWNLOAD_PROGRESS_INTERVAL", 5*time.Second),
 		MaxDownloadBytes:         envInt64("MAX_DOWNLOAD_BYTES", 0),
 		OutputFileMode:           0o644,
+	}
+
+	minPoll := 5 * time.Second
+	if cfg.PollInterval < minPoll {
+		return Config{}, fmt.Errorf("POLL_INTERVAL: value %s is too small; minimum is %s", cfg.PollInterval, minPoll)
 	}
 
 	if attrsRaw := strings.TrimSpace(os.Getenv("OUTPUT_FILE_ATTRIBUTES")); attrsRaw != "" {
