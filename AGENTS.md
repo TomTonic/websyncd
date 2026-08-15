@@ -166,7 +166,7 @@ external impact may be omitted.
 Language/runtime dependency updates, including Go toolchain bumps (a new
 compiler may change runtime behavior or safety guarantees). Highlight
 security-relevant updates (CVE fixes, patched vulnerabilities) explicitly,
-even if transitive.
+even if they come from (indirect) code dependencies or Go updates.
 
 ### CI Updates
 CI pipeline changes: linter upgrades, new analysis rules, runner image updates,
