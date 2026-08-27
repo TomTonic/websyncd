@@ -198,14 +198,16 @@ func TestStartHeartbeatInvalidAddr(t *testing.T) {
 //
 // It serves static content, runs the daemon briefly, and asserts output is written.
 func TestRunStartupSyncAndShutdown(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 		_, _ = io.WriteString(w, "hello from run test")
 	}))
-	defer server.Close()
+	// Run's internal HTTP client dials a real address, so the server needs a
+	// loopback listener rather than NewTestServer's default in-memory network.
+	server.Start()
 
 	out := filepath.Join(t.TempDir(), "synced.txt")
 	cfg := &config.Config{
